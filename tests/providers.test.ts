@@ -1,0 +1,95 @@
+import { describe, expect, it } from "vitest";
+import { destinationPoint, resample, type LngLat } from "@/lib/geo";
+import { describeStep } from "@/lib/providers/osrm";
+import { buildRouteQuery, classifyArea, classifyPoi, parseOverpass, queryLine } from "@/lib/providers/overpass";
+import { dedupeRoutes, rankRoutes, viaPoints, type PlannedRoute } from "@/lib/safety/plan";
+import type { RawRoute } from "@/lib/providers/osrm";
+
+describe("OSRM step text", () => {
+  it("describes common maneuvers", () => {
+    expect(describeStep({ name: "MG Road", maneuver: { type: "turn", modifier: "left", location: [0, 0] } })).toBe("Turn left onto MG Road");
+    expect(describeStep({ name: "", maneuver: { type: "turn", modifier: "slight right", location: [0, 0] } })).toBe("Turn slightly right");
+    expect(describeStep({ name: "AB Road", maneuver: { type: "roundabout", exit: 2, location: [0, 0] } })).toBe(
+      "At the roundabout, take exit 2 onto AB Road",
+    );
+    expect(describeStep({ name: "", maneuver: { type: "arrive", location: [0, 0] } })).toMatch(/arrived/);
+  });
+});
+
+describe("Overpass", () => {
+  it("classifies points of interest and land use", () => {
+    expect(classifyPoi({ amenity: "police" })).toBe("police");
+    expect(classifyPoi({ highway: "street_lamp" })).toBe("lamp");
+    expect(classifyPoi({ shop: "supermarket" })).toBe("shop");
+    expect(classifyPoi({ highway: "bus_stop" })).toBe("transit");
+    expect(classifyPoi({ amenity: "bench" })).toBeNull();
+    expect(classifyArea({ landuse: "industrial" })).toBe("industrial");
+    expect(classifyArea({ leisure: "park" })).toBe("park");
+    expect(classifyArea({ landuse: "residential" })).toBeNull();
+  });
+
+  it("parses an Overpass response into roads, places and areas", () => {
+    const f = parseOverpass([
+      { type: "way", id: 1, tags: { highway: "primary", lit: "yes", oneway: "yes" }, geometry: [{ lat: 1, lon: 1 }, { lat: 1.001, lon: 1 }] },
+      { type: "node", id: 2, lat: 1, lon: 1, tags: { amenity: "cafe", opening_hours: "Mo-Su 08:00-22:00", name: "Chai Point" } },
+      { type: "way", id: 3, center: { lat: 1, lon: 1 }, tags: { shop: "bakery" } },
+      {
+        type: "way",
+        id: 4,
+        tags: { landuse: "industrial" },
+        geometry: [{ lat: 0, lon: 0 }, { lat: 0, lon: 1 }, { lat: 1, lon: 1 }, { lat: 0, lon: 0 }],
+      },
+      { type: "node", id: 2, lat: 1, lon: 1, tags: { amenity: "cafe" } },
+    ]);
+    expect(f.roads).toHaveLength(1);
+    expect(f.roads[0].tags).toEqual({ highway: "primary", lit: "yes" });
+    expect(f.pois.map((p) => p.kind).sort()).toEqual(["food", "shop"]);
+    expect(f.pois.find((p) => p.kind === "food")).toMatchObject({ name: "Chai Point", openingHours: "Mo-Su 08:00-22:00" });
+    expect(f.areas).toHaveLength(1);
+  });
+
+  it("builds a bounded query for long routes", () => {
+    const start: LngLat = [75.86, 22.72];
+    const wiggly = resample([start, destinationPoint(start, 0, 5000)], 10).map((s, i) => [s.point[0] + (i % 2) * 0.0003, s.point[1]] as LngLat);
+    expect(queryLine(wiggly).length).toBeLessThanOrEqual(120);
+    const q = buildRouteQuery([wiggly]);
+    expect(q).toContain("[out:json]");
+    expect(q).toContain("highway=street_lamp");
+    expect(q).toContain("amenity=police");
+  });
+});
+
+describe("route candidates", () => {
+  const a: LngLat = [75.86, 22.72];
+  const b = destinationPoint(a, 0, 2000);
+
+  it("creates via-points on both sides for longer walks only", () => {
+    expect(viaPoints(a, destinationPoint(a, 0, 300))).toHaveLength(0);
+    expect(viaPoints(a, b)).toHaveLength(2);
+  });
+
+  it("drops near-identical routes", () => {
+    const r = (coords: LngLat[]): RawRoute => ({ coordinates: coords, distance: 2000, duration: 1500, steps: [] });
+    const parallel = [destinationPoint(a, 90, 500), destinationPoint(b, 90, 500)];
+    expect(dedupeRoutes([r([a, b]), r([a, b]), r(parallel)])).toHaveLength(2);
+  });
+
+  it("recommends the safest route unless it is barely safer and much slower", () => {
+    const mk = (id: string, duration: number, score: number): PlannedRoute => ({
+      id,
+      coordinates: [],
+      distance: 0,
+      duration,
+      steps: [],
+      tags: [],
+      safety: { score } as PlannedRoute["safety"],
+    });
+    const ranked = rankRoutes([mk("fast", 600, 60), mk("safe", 700, 80)]);
+    expect(ranked[0].id).toBe("safe");
+    expect(ranked[0].tags).toEqual(["safest", "recommended"]);
+
+    const close = rankRoutes([mk("fast", 600, 78), mk("slow", 900, 80)]);
+    expect(close[0].id).toBe("fast");
+    expect(close[0].tags).toContain("recommended");
+  });
+});
