@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-50: #eef6ff;
+  --color-brand-100: #d9eaff;
+  --color-brand-500: #2563eb;
+  --color-brand-600: #1d4ed8;
+  --color-brand-700: #1e40af;
+  --color-sos: #dc2626;
+  --color-sos-dark: #b91c1c;
+  --color-good: #15803d;
+  --color-caution: #b45309;
+  --color-avoid: #b91c1c;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  background: #f8fafc;
+  color: #0f172a;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Keep content clear of the bottom navigation, the floating SOS button and the iOS home indicator. */
+.pb-nav {
+  padding-bottom: calc(9.5rem + env(safe-area-inset-bottom));
+}
+
+.map-pin {
+  width: 26px;
+  height: 26px;
+  border-radius: 9999px;
+  border: 2px solid #fff;
+  color: #fff;
+  font: 700 13px/22px ui-sans-serif, system-ui, sans-serif;
+  text-align: center;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+  cursor: pointer;
+}
+
+.maplibregl-ctrl-bottom-right {
+  bottom: calc(5.5rem + env(safe-area-inset-bottom));
+}
+
+@keyframes sos-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(220 38 38 / 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 18px rgb(220 38 38 / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(220 38 38 / 0);
+  }
+}
+
+.sos-pulse {
+  animation: sos-pulse 2s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sos-pulse {
+    animation: none;
+  }
+}

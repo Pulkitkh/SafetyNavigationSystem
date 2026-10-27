@@ -1,0 +1,95 @@
+# Safety model
+
+The model is a transparent, rule-based heuristic built from established frameworks. It is not a trained model. All constants live in `src/lib/safety/score.ts` and are covered by tests in `tests/score.test.ts`.
+
+## Frameworks
+
+- **Safetipin safety audit.** Developed in Delhi and used by Indian city governments and UN Women. It has nine parameters: lighting, openness, visibility, people, security, walk path, public transport, gender usage and feeling.
+- **CPTED (Crime Prevention Through Environmental Design).** Natural surveillance ("eyes on the street"), access to help, and avoidance of isolated, unmaintained spaces.
+
+SafeNav measures the parameters that open data can support. "Gender usage" and "feeling" cannot be read from map data, so they come in indirectly through community reports.
+
+## Pipeline
+
+1. **Candidates.** OSRM foot routing with `alternatives=3`. For walks longer than 400 m with fewer than three alternatives, extra candidates are routed through via-points offset 22% of the trip distance (150–1500 m) to each side of the straight line. Near-duplicates (85%+ overlap within 25 m) and routes more than 1.6× slower than the fastest are dropped.
+2. **Data.** One Overpass request fetches, for all candidates:
+   - roads within 25 m;
+   - street lamps (40 m), CCTV (50 m) and footfall places (60 m);
+   - transit (150 m), police (1.5 km) and hospitals (1 km);
+   - isolating land use touching the route (20 m).
+
+   Community reports come from the database. Rain comes from Open-Meteo.
+3. **Sampling.** The route is sampled every 20 m and grouped into 100 m segments. Each sample is matched to the nearest mapped road within 20 m, or 35 m as a fallback.
+4. **Timing.** Each segment is evaluated at its own ETA (departure plus distance-proportional travel time), so a shop that closes while you walk counts as closed. The light period (day, twilight, night or late night) comes from the sun position at the route midpoint.
+
+## Factors (0–100, higher is safer)
+
+| Factor | Inputs | Rules |
+| --- | --- | --- |
+| Lighting | `lit=*`, `highway=street_lamp` | lit=yes → 100; limited → 60; lit=no → 10 (55 with a lamp nearby). Untagged: 2+ lamps → 90, 1 lamp → 75, otherwise a prior by road class (main road 70, tertiary 60, residential 45, service 35, footway/path 35, track 10). |
+| People & open shops | shops, eateries, pharmacies, fuel, banks, venues, places of worship, hospitals, transit | Each place is weighted by kind × probability it is open at the ETA. `opening_hours` is parsed when present; otherwise typical Indian hours apply (e.g. shops 0.75 from 9:00–20:00, 0.03 after 23:00). Score = 100·(1−e^(−x/2)), where x is the weighted open count per 100 m. After dark: +8 on main roads (passing traffic), ×0.7 when raining. |
+| Footpath & road type | `highway`, `sidewalk*`, `tunnel` | Footway/pedestrian 90; main road with sidewalk 85, without 25, unknown 35–60 by class; residential 70; track 25–40; pedestrian underpass 30 at night. |
+| Openness | `landuse`, `leisure`, `natural`, `amenity=grave_yard` | Penalty (night / day): industrial 70/35, cemetery 75/30, woods/scrub 75/45, park 55/10, waste land 65/35, construction 65/35, railway 50/25, military 40/20. Twilight uses the midpoint. |
+| Help nearby | police, open hospitals / fuel / 24h pharmacies, CCTV | Police: ≤300 m → 100, falling linearly to 20 at 2 km. Safe haven: ≤200 m → 100, falling to 30 at 1 km. The higher of police and 0.85 × haven counts; +10 if CCTV is mapped. |
+| Public transport | bus stops, stations | ≤100 m 100, ≤250 m 75, ≤500 m 55, else 40. |
+| Community reports | user reports within 60 m | Weight = severity × 0.5^(age / half-life) × credibility × time-of-day match. Credibility = 0.6 + 0.2·confirmations − 0.25·flags, clamped to 0.2–1.5. Score = 80·e^(−W/1.5); reassuring reports raise it towards 100. |
+
+### Report categories
+
+| Category | Severity | Half-life (days) |
+| --- | --- | --- |
+| Harassment / eve-teasing, followed / stalked | 3 | 90 |
+| Chain / phone snatching | 2.5 | 90 |
+| Drunk or rowdy groups | 2 | 45 |
+| Deserted, poor lighting (dark only), aggressive stray dogs | 1.5 | 60 / 60 / 30 |
+| Broken footpath, other | 1 | 120 / 30 |
+| Well lit (dark only), busy, police presence | −1 | 60–90 |
+
+Reports older than 365 days are ignored. Reports flagged 3+ times, and more often flagged than confirmed, are hidden.
+
+## Weights by light period
+
+| Factor | Day | Twilight | Night | Late night (23–05) |
+| --- | --- | --- | --- | --- |
+| Lighting | 0% | 15% | 24% | 24% |
+| People & open shops | 20% | 20% | 20% | 24% |
+| Footpath & road type | 25% | 17% | 10% | 6% |
+| Openness | 12% | 13% | 14% | 15% |
+| Help nearby | 10% | 9% | 9% | 10% |
+| Public transport | 6% | 6% | 5% | 3% |
+| Community reports | 27% | 20% | 18% | 18% |
+
+## Route score and ranking
+
+- **Route score:** 0.65 × length-weighted segment mean + 0.35 × the 10th-percentile segment. A route is only as safe as its weakest stretch.
+- **Bands:** ≥70 "Safer", 50–69 "Use caution", <50 "Avoid if possible".
+- **Weak stretches:** consecutive segments scoring below 50 and at least 80 m long, with their most common reasons.
+- **Recommendation:** the safest route, unless it is less than 5 points safer than the fastest *and* more than 25% slower.
+
+## Data confidence
+
+OpenStreetMap coverage in Indian cities varies. Each route reports coverage as the average of:
+
+- the share of samples matched to a mapped road;
+- the share with known lighting (after dark only);
+- the share of main-road samples with known footpaths;
+- the share of nearby places that publish opening hours.
+
+The levels are High (≥60%), Medium (≥30%) and Low. Unknown data is never scored as safe: it falls back to conservative priors, and the UI says so.
+
+## Journey monitoring (`src/lib/monitor.ts`)
+
+| Rule | Walk | Ride |
+| --- | --- | --- |
+| Off route | > 80 m + GPS accuracy, for 45 s | > 500 m + accuracy, for 90 s |
+| Stopped | within 30 m for 6 min | within 80 m for 5 min |
+| Overdue | 10 min past expected arrival | 15 min past (ride ETA × 1.5 for Indian traffic) |
+| Arrived | within 60 m of the destination | within 150 m |
+
+Fixes with accuracy worse than 150 m are ignored. Answering "I'm OK" mutes that rule for 5 minutes (10 for overdue). An unanswered check-in raises an SOS after 60 seconds if automatic SOS is on.
+
+## Known limitations
+
+- There is no street-level crime data for India. If a city publishes geocoded data, it can be added as another factor.
+- Priors and weights are expert-set. They should be calibrated against Safetipin audit data or user feedback where available.
+- One Overpass call per plan. Very long walks (>15 km) are not scored.

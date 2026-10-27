@@ -32,18 +32,8 @@ import type { Area, AreaKind, OsmFeatures, Poi, PoiKind, Road } from "@/lib/prov
 import { REPORT_MAX_AGE_DAYS, reportCategory } from "@/lib/reports";
 import { isDark, lightPeriod, wallClockDate, wallParts, type LightPeriod } from "@/lib/time";
 
-export type Factor = "lighting" | "activity" | "walkpath" | "isolation" | "help" | "transit" | "community";
-export const FACTORS: Factor[] = ["lighting", "activity", "walkpath", "isolation", "help", "transit", "community"];
-
-export const FACTOR_LABELS: Record<Factor, string> = {
-  lighting: "Street lighting",
-  activity: "People & open shops",
-  walkpath: "Footpath & road type",
-  isolation: "Openness of surroundings",
-  help: "Help nearby",
-  transit: "Public transport access",
-  community: "Community reports",
-};
+import { FACTORS, type Factor } from "./factors";
+export { FACTORS, FACTOR_LABELS, type Factor } from "./factors";
 
 export const WEIGHTS: Record<LightPeriod, Record<Factor, number>> = {
   day: { lighting: 0, activity: 0.2, walkpath: 0.25, isolation: 0.12, help: 0.1, transit: 0.06, community: 0.27 },
