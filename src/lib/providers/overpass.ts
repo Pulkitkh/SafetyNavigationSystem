@@ -1,5 +1,5 @@
 import { simplify, type LngLat } from "@/lib/geo";
-import { cached, fetchJson } from "./http";
+import { cached, endpoints, fetchJson, UpstreamError, withFailover } from "./http";
 
 export type PoiKind =
   | "lamp"
@@ -129,6 +129,9 @@ const ROAD_TAGS = new Set([
   "bridge",
   "name",
   "surface",
+  "smoothness",
+  "wheelchair",
+  "service",
   "access",
 ]);
 
@@ -242,23 +245,54 @@ export function parseOverpass(elements: OverpassElement[]): OsmFeatures {
   return { roads, pois, areas };
 }
 
-function overpassUrl() {
-  return process.env.OVERPASS_URL || "https://overpass-api.de/api/interpreter";
+/** Public Overpass instances listed on the OSM wiki; OVERPASS_URL (comma-separated) overrides them. */
+export const OVERPASS_MIRRORS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+];
+
+interface OverpassResponse {
+  elements: OverpassElement[];
+  remark?: string;
 }
 
+/**
+ * Overpass reports timeouts and memory exhaustion as HTTP 200 with a "runtime error"
+ * remark and partial (often empty) results. Scoring those would rate every street on
+ * priors alone, so they are treated as a failure and the next mirror is tried.
+ */
+export function assertCompleteOverpass(data: OverpassResponse): OverpassResponse {
+  if (data.remark && /runtime error|out of memory|timed out/i.test(data.remark)) {
+    throw new UpstreamError(`OpenStreetMap data: ${data.remark.slice(0, 120)}`, "OpenStreetMap data", 504);
+  }
+  return data;
+}
+
+/** Total time allowed across all mirrors, so a plan request finishes within the function limit. */
+const OVERPASS_BUDGET_MS = 45_000;
+
 async function runQuery(query: string, ttlMs: number) {
-  return cached("overpass", query, ttlMs, () =>
-    fetchJson<{ elements: OverpassElement[] }>(overpassUrl(), {
-      service: "OpenStreetMap data",
-      timeoutMs: 50_000,
-      retries: 2,
-      init: {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: `data=${encodeURIComponent(query)}`,
-      },
-    }),
-  );
+  return cached("overpass", query, ttlMs, () => {
+    const deadline = Date.now() + OVERPASS_BUDGET_MS;
+    return withFailover(endpoints(process.env.OVERPASS_URL, OVERPASS_MIRRORS), async (url) => {
+      const left = deadline - Date.now();
+      if (left < 5_000) throw new UpstreamError("OpenStreetMap data: out of time", "OpenStreetMap data");
+      return assertCompleteOverpass(
+        await fetchJson<OverpassResponse>(url, {
+          service: "OpenStreetMap data",
+          timeoutMs: Math.min(40_000, left),
+          // The next mirror is the retry.
+          retries: 0,
+          init: {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: `data=${encodeURIComponent(query)}`,
+          },
+        }),
+      );
+    });
+  });
 }
 
 /** Street-level features around each candidate route, in a single Overpass request. */

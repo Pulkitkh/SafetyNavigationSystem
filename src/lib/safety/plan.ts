@@ -3,7 +3,8 @@ import { getDb, schema } from "@/lib/db";
 import { bboxOf, bearing, destinationPoint, haversine, overlapRatio, type LngLat } from "@/lib/geo";
 import { fetchRouteFeatures } from "@/lib/providers/overpass";
 import { osrmRoute, type RawRoute, type RouteStep, type TravelMode } from "@/lib/providers/osrm";
-import { currentWeather } from "@/lib/providers/weather";
+import { valhallaRoute } from "@/lib/providers/valhalla";
+import { weatherAt, type WeatherAt } from "@/lib/providers/weather";
 import { REPORT_MAX_AGE_DAYS } from "@/lib/reports";
 import { appTimezone } from "@/lib/time";
 import { FeatureIndex, scoreRoute, type CommunityReport, type RouteSafety } from "./score";
@@ -18,11 +19,17 @@ export interface PlannedRoute {
   tags: ("safest" | "fastest" | "recommended")[];
 }
 
+export interface PlanOptions {
+  /** Prefer routes without steps or rough surfaces (wheelchair, walker, stroller, elderly). */
+  stepFree?: boolean;
+}
+
 export interface PlanResult {
   mode: TravelMode;
   departAt: string;
+  stepFree: boolean;
   routes: PlannedRoute[];
-  weather: { raining: boolean } | null;
+  weather: Pick<WeatherAt, "isRaining" | "heavyRain" | "foggy" | "visibilityM" | "precipitationMm"> | null;
   dataNote?: string;
 }
 
@@ -56,10 +63,18 @@ export function dedupeRoutes(routes: RawRoute[], overlapLimit = 0.85): RawRoute[
   return kept;
 }
 
-async function candidateRoutes(from: LngLat, to: LngLat, mode: TravelMode): Promise<RawRoute[]> {
-  const primary = await osrmRoute([from, to], mode, 3);
-  if (!primary.length) return [];
-  let all = primary;
+async function candidateRoutes(from: LngLat, to: LngLat, mode: TravelMode, opts: PlanOptions): Promise<RawRoute[]> {
+  const wantStepFree = mode === "walk" && opts.stepFree && process.env.VALHALLA_URL !== "off";
+  const [primaryResult, stepFreeResult] = await Promise.allSettled([
+    osrmRoute([from, to], mode, 3),
+    // A wheelchair-profile route avoids steps outright; scoring alone can only penalise them.
+    wantStepFree ? valhallaRoute([from, to], mode, 1, { wheelchair: true }) : Promise.resolve([]),
+  ]);
+  const stepFree = stepFreeResult.status === "fulfilled" ? stepFreeResult.value : [];
+  if (primaryResult.status === "rejected" && !stepFree.length) throw primaryResult.reason;
+  const primary = primaryResult.status === "fulfilled" ? primaryResult.value : [];
+  if (!primary.length && !stepFree.length) return [];
+  let all = [...stepFree, ...primary];
   if (mode === "walk" && primary.length < 3) {
     const extra = await Promise.allSettled(viaPoints(from, to).map((v) => osrmRoute([from, v, to], mode, 0)));
     for (const r of extra) if (r.status === "fulfilled" && r.value[0]) all = [...all, r.value[0]];
@@ -94,27 +109,38 @@ async function loadReports(routes: LngLat[][]): Promise<CommunityReport[]> {
 }
 
 /** Label routes and order them: recommended first. */
-export function rankRoutes(routes: PlannedRoute[]): PlannedRoute[] {
+export function rankRoutes(routes: PlannedRoute[], opts: PlanOptions = {}): PlannedRoute[] {
   if (!routes.length) return routes;
   const fastest = routes.reduce((a, b) => (b.duration < a.duration ? b : a));
   fastest.tags.push("fastest");
-  const scored = routes.filter((r) => r.safety);
+  let scored = routes.filter((r) => r.safety);
+  // For step-free travel a route with steps is not usable at all, whatever its score.
+  if (opts.stepFree && scored.some((r) => r.safety!.stats.steps === 0)) scored = scored.filter((r) => r.safety!.stats.steps === 0);
   if (!scored.length) {
     fastest.tags.push("recommended");
     return [fastest, ...routes.filter((r) => r !== fastest)];
   }
   const safest = scored.reduce((a, b) => (b.safety!.score > a.safety!.score ? b : a));
   safest.tags.push("safest");
-  // Prefer the safest route unless it is barely safer yet much slower.
-  const gain = safest.safety!.score - (fastest.safety?.score ?? 0);
-  const extra = safest.duration / fastest.duration - 1;
-  const recommended = gain < 5 && extra > 0.25 ? fastest : safest;
+  // Prefer the safest route unless it is barely safer yet much slower, comparing only
+  // with routes the traveller can actually use.
+  const quickest = scored.includes(fastest) ? fastest : scored.reduce((a, b) => (b.duration < a.duration ? b : a));
+  const gain = safest.safety!.score - (quickest.safety?.score ?? 0);
+  const extra = safest.duration / quickest.duration - 1;
+  const recommended = gain < 5 && extra > 0.25 ? quickest : safest;
   recommended.tags.push("recommended");
-  return [recommended, ...routes.filter((r) => r !== recommended).sort((a, b) => (b.safety?.score ?? 0) - (a.safety?.score ?? 0))];
+  const usable = (r: PlannedRoute) => (opts.stepFree && r.safety ? (r.safety.stats.steps === 0 ? 0 : 1) : 0);
+  return [
+    recommended,
+    ...routes
+      .filter((r) => r !== recommended)
+      .sort((a, b) => usable(a) - usable(b) || (b.safety?.score ?? 0) - (a.safety?.score ?? 0)),
+  ];
 }
 
-export async function planRoutes(from: LngLat, to: LngLat, mode: TravelMode, departAt: Date): Promise<PlanResult> {
-  const raw = await candidateRoutes(from, to, mode);
+export async function planRoutes(from: LngLat, to: LngLat, mode: TravelMode, departAt: Date, opts: PlanOptions = {}): Promise<PlanResult> {
+  const stepFree = mode === "walk" && !!opts.stepFree;
+  const raw = await candidateRoutes(from, to, mode, opts);
   const base: PlannedRoute[] = raw.map((r, i) => ({
     id: `r${i}`,
     coordinates: r.coordinates,
@@ -124,35 +150,67 @@ export async function planRoutes(from: LngLat, to: LngLat, mode: TravelMode, dep
     safety: null,
     tags: [],
   }));
-  if (!base.length) return { mode, departAt: departAt.toISOString(), routes: [], weather: null };
+  const result = (routes: PlannedRoute[], weather: PlanResult["weather"], dataNote?: string): PlanResult => ({
+    mode,
+    departAt: departAt.toISOString(),
+    stepFree,
+    routes,
+    weather,
+    ...(dataNote ? { dataNote } : {}),
+  });
+  if (!base.length) return result([], null);
 
   if (mode === "ride") {
     // Rides are monitored live rather than scored for walking factors.
-    return { mode, departAt: departAt.toISOString(), routes: rankRoutes(base.slice(0, 1)), weather: null };
+    return result(rankRoutes(base.slice(0, 1)), null);
   }
 
-  const tooLong = base.every((r) => r.distance > MAX_WALK_M);
-  if (tooLong) {
-    return {
-      mode,
-      departAt: departAt.toISOString(),
-      routes: rankRoutes(base),
-      weather: null,
-      dataNote: "This walk is over 15 km, so safety scoring is skipped. Consider a ride with live monitoring.",
-    };
+  if (base.every((r) => r.distance > MAX_WALK_M)) {
+    return result(rankRoutes(base), null, "This walk is over 15 km, so safety scoring is skipped. Consider a ride with live monitoring.");
   }
 
   const coords = base.map((r) => r.coordinates);
-  const [features, reports, weather] = await Promise.all([fetchRouteFeatures(coords), loadReports(coords), currentWeather(from)]);
-  const index = new FeatureIndex(features, reports);
-  const departingSoon = Math.abs(departAt.getTime() - Date.now()) < 3 * 3600_000;
-  const ctx = { departAt, tz: appTimezone(), raining: departingSoon ? !!weather?.isRaining : false };
+  // Weather for the middle of the walk, from the hourly forecast.
+  const midTrip = new Date(departAt.getTime() + (base[0].duration * 1000) / 2);
+  const [featuresResult, reports, weather] = await Promise.all([
+    fetchRouteFeatures(coords).then(
+      (f) => ({ ok: true as const, f }),
+      (err: Error) => ({ ok: false as const, err }),
+    ),
+    loadReports(coords).catch(() => []),
+    weatherAt(from, midTrip),
+  ]);
+  const weatherOut = weather && {
+    isRaining: weather.isRaining,
+    heavyRain: weather.heavyRain,
+    foggy: weather.foggy,
+    visibilityM: weather.visibilityM,
+    precipitationMm: weather.precipitationMm,
+  };
+  if (!featuresResult.ok) {
+    // Never leave someone without directions because the street-data service is busy.
+    console.error(`[plan] street data unavailable: ${featuresResult.err.message}`);
+    return result(
+      rankRoutes(base),
+      weatherOut,
+      "Street safety data is temporarily unavailable, so these routes are not scored. Prefer busy, lit main roads and try again in a minute.",
+    );
+  }
+  const index = new FeatureIndex(featuresResult.f, reports);
+  const ctx = {
+    departAt,
+    tz: appTimezone(),
+    raining: !!weather?.isRaining,
+    heavyRain: !!weather?.heavyRain,
+    foggy: !!weather?.foggy,
+    stepFree,
+  };
   for (const r of base) r.safety = scoreRoute(r.coordinates, r.duration, index, ctx);
 
-  return {
-    mode,
-    departAt: departAt.toISOString(),
-    routes: rankRoutes(base),
-    weather: departingSoon && weather ? { raining: weather.isRaining } : null,
-  };
+  const ranked = rankRoutes(base, { stepFree });
+  const note =
+    stepFree && ranked.every((r) => (r.safety?.stats.steps ?? 0) > 0)
+      ? "Every route found uses steps somewhere. Check the marked stretches before you set off."
+      : undefined;
+  return result(ranked, weatherOut, note);
 }

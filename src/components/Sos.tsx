@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, newShareToken } from "@/lib/client/api";
-import { useGeolocation, useSession, batteryLevel } from "@/lib/client/hooks";
+import { useGeolocation, usePrefs, useSession, batteryLevel } from "@/lib/client/hooks";
+import { useShake } from "@/lib/client/shake";
 import { store } from "@/lib/client/store";
 import { detectPlatform, EMERGENCY_NUMBERS, smsUri, sosMessage, whatsappUri } from "@/lib/sos";
 
@@ -35,6 +36,8 @@ export function useSos() {
   return ctx;
 }
 
+const SHAKE_COUNTDOWN_S = 5;
+
 const REASON: Record<Trigger, string | null> = {
   manual: null,
   missed_checkin: "missed a safety check-in",
@@ -44,6 +47,8 @@ const REASON: Record<Trigger, string | null> = {
 export function SosProvider({ children }: { children: ReactNode }) {
   const { me, contacts } = useSession();
   const [sos, setSos] = useState<SosState | null>(null);
+  const [shakeCountdown, setShakeCountdown] = useState<number | null>(null);
+  const [prefs] = usePrefs();
   const geo = useGeolocation(!!sos);
 
   const trigger = useCallback(
@@ -126,6 +131,22 @@ export function SosProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(id);
   }, [sos?.tripId, sos?.server]);
 
+  // Shake to SOS: hard shakes start a short countdown the user can cancel.
+  useShake(prefs.shakeSos && !sos && shakeCountdown == null, () => {
+    navigator.vibrate?.([200, 100, 200]);
+    setShakeCountdown(SHAKE_COUNTDOWN_S);
+  });
+  useEffect(() => {
+    if (shakeCountdown == null) return;
+    if (shakeCountdown <= 0) {
+      setShakeCountdown(null);
+      trigger("manual");
+      return;
+    }
+    const id = setTimeout(() => setShakeCountdown((n) => (n == null ? null : n - 1)), 1000);
+    return () => clearTimeout(id);
+  }, [shakeCountdown, trigger]);
+
   const close = useCallback(async (markSafe: boolean) => {
     if (markSafe && sos?.tripId) {
       await api(`/api/trips/${sos.tripId}`, { method: "PATCH", json: { status: "ended", reason: "Marked safe" } }).catch(() => {});
@@ -138,6 +159,33 @@ export function SosProvider({ children }: { children: ReactNode }) {
     <SosContext.Provider value={{ active: !!sos, trigger }}>
       {children}
       {sos && <SosSheet sos={sos} contacts={contacts} signedIn={!!me} gpsError={geo.error} onClose={close} />}
+      {shakeCountdown != null && !sos && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-red-700/95 p-6 text-center text-white" role="alertdialog" aria-modal="true" aria-labelledby="shake-title">
+          <div className="w-full max-w-sm">
+            <h2 id="shake-title" className="text-2xl font-bold">
+              Shake detected
+            </h2>
+            <p className="mt-1 text-red-100">Sending SOS in</p>
+            <p className="my-4 text-7xl font-extrabold tabular-nums" aria-live="assertive">
+              {shakeCountdown}
+            </p>
+            <div className="grid gap-2">
+              <button
+                onClick={() => {
+                  setShakeCountdown(null);
+                  trigger("manual");
+                }}
+                className="rounded-xl bg-white py-3 text-lg font-bold text-red-700"
+              >
+                Send SOS now
+              </button>
+              <button onClick={() => setShakeCountdown(null)} className="rounded-xl border border-white/70 py-3 font-semibold">
+                Cancel, I&apos;m fine
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </SosContext.Provider>
   );
 }

@@ -58,6 +58,12 @@ export interface ScoringContext {
   departAt: Date;
   tz: string;
   raining?: boolean;
+  /** ≥ 4 mm/h or thunderstorm at the time of travel. */
+  heavyRain?: boolean;
+  /** Visibility under 1 km at the time of travel. */
+  foggy?: boolean;
+  /** Wheelchair, walker, stroller or anyone who cannot use steps. */
+  stepFree?: boolean;
 }
 
 export interface ScoredSegment {
@@ -95,6 +101,8 @@ export interface RouteSafety {
     nearestPoliceM: number | null;
     cctv: number;
     reportsNearby: number;
+    /** Distinct flights of steps the route uses. */
+    steps: number;
   };
 }
 
@@ -204,10 +212,37 @@ function hasSidewalk(tags: Record<string, string>): boolean | null {
   return values.some((v) => ["both", "left", "right", "separate", "yes"].includes(v!));
 }
 
-export function walkpathScore(tags: Record<string, string> | undefined, dark: boolean): { score: number; known: boolean; reason?: string } {
+const UNPAVED = new Set(["unpaved", "gravel", "fine_gravel", "dirt", "earth", "ground", "grass", "mud", "sand", "pebblestone", "rock", "woodchips"]);
+
+export interface WalkOptions {
+  stepFree?: boolean;
+  heavyRain?: boolean;
+}
+
+export function walkpathScore(
+  tags: Record<string, string> | undefined,
+  dark: boolean,
+  opts: WalkOptions = {},
+): { score: number; known: boolean; reason?: string } {
+  const base = baseWalkpath(tags, dark, opts);
+  if (!opts.stepFree || !tags?.highway) return base;
+  // Step-free travel: steps, unpaved ground and ways mapped as inaccessible are near-impassable.
+  if (tags.highway === "steps") return { score: 5, known: true, reason: "Steps (not step-free)" };
+  if (tags.wheelchair === "no") return { score: 15, known: true, reason: "Mapped as not wheelchair accessible" };
+  if (tags.surface && UNPAVED.has(tags.surface)) return { score: Math.min(base.score, 30), known: true, reason: "Unpaved surface" };
+  if (tags.smoothness && ["bad", "very_bad", "horrible", "very_horrible", "impassable"].includes(tags.smoothness)) {
+    return { score: Math.min(base.score, 35), known: true, reason: "Rough surface" };
+  }
+  if (tags.wheelchair === "yes") return { ...base, score: Math.max(base.score, 85), known: true };
+  return base;
+}
+
+function baseWalkpath(tags: Record<string, string> | undefined, dark: boolean, opts: WalkOptions): { score: number; known: boolean; reason?: string } {
   if (!tags?.highway) return { score: 55, known: false };
   const hw = tags.highway;
   if (tags.tunnel === "yes" && (hw === "footway" || hw === "path" || hw === "steps")) {
+    // Pedestrian subways in Indian cities flood quickly in monsoon downpours.
+    if (opts.heavyRain) return { score: 20, known: true, reason: "Underpass may be waterlogged in heavy rain" };
     return { score: dark ? 30 : 60, known: true, reason: "Pedestrian underpass" };
   }
   if (PEDESTRIAN.has(hw)) return { score: 90, known: true };
@@ -223,6 +258,8 @@ export function walkpathScore(tags: Record<string, string> | undefined, dark: bo
     const prior = hw.startsWith("trunk") ? 35 : hw.startsWith("primary") ? 50 : hw.startsWith("secondary") ? 55 : 60;
     return { score: prior, known: false };
   }
+  // Narrow back lanes have little natural surveillance after dark (CPTED).
+  if (hw === "service" && tags.service === "alley" && dark) return { score: 40, known: true, reason: "Narrow back lane" };
   if (MINOR_ROADS.has(hw)) return { score: 70, known: true };
   return { score: 55, known: false };
 }
@@ -383,14 +420,19 @@ export function scoreRoute(
   const weights = WEIGHTS[period];
   const etaAt = (at: number) => new Date(ctx.departAt.getTime() + (total > 0 ? (at / total) * durationS * 1000 : 0));
 
+  const stepWays = new Set<string>();
   const facts: SampleFacts[] = samples.map((sample) => {
     const road = index.nearestRoad(sample.point, 20) ?? index.nearestRoad(sample.point, 35);
     const tags = road?.road.tags;
     const lamps = index.pois.near(sample.point, 35).filter((n) => n.item.kind === "lamp").length;
-    const walk = walkpathScore(tags, dark);
+    const walk = walkpathScore(tags, dark, { stepFree: ctx.stepFree, heavyRain: ctx.heavyRain });
+    const light = lightingScore(tags, lamps);
+    // Fog scatters street light and hides people from view; lighting counts for less.
+    if (ctx.foggy && period !== "day") light.score = Math.round(light.score * 0.8);
+    if (tags?.highway === "steps" && road) stepWays.add(road.road.id);
     return {
       sample,
-      light: lightingScore(tags, lamps),
+      light,
       walk,
       isolation: isolationScore(index.areasAt(sample.point), period),
       roadMatched: !!road,
@@ -494,11 +536,11 @@ export function scoreRoute(
     const reasons: string[] = [];
     if (weights.lighting > 0 && factors.lighting < 45) {
       const known = group.some((f) => f.light.known);
-      reasons.push(known ? "Poorly lit stretch" : "Street lighting not mapped here");
+      reasons.push(ctx.foggy ? "Dim in fog" : known ? "Poorly lit stretch" : "Street lighting not mapped here");
     }
     if (factors.activity < 35) reasons.push(dark ? "Few open shops or people at this hour" : "Few shops or people around");
     const walkReason = group.find((f) => f.walk.reason)?.walk.reason;
-    if (factors.walkpath < 50 && walkReason) reasons.push(walkReason);
+    if ((factors.walkpath < 50 || (ctx.stepFree && walkReason)) && walkReason) reasons.push(walkReason);
     const worstArea = group.find((f) => f.isolation.worst)?.isolation.worst;
     if (factors.isolation < 60 && worstArea) reasons.push(`Passes ${AREA_PENALTY[worstArea].label}`);
     if (factors.help < 40) reasons.push(policeM == null ? "No police station within 2 km" : `Police station ${(policeM / 1000).toFixed(1)} km away`);
@@ -576,6 +618,7 @@ export function scoreRoute(
       nearestPoliceM: nearestPolice == null ? null : Math.round(nearestPolice),
       cctv: cctvSeen.size,
       reportsNearby: reportsSeen.size,
+      steps: stepWays.size,
     },
   };
 }

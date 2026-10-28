@@ -13,12 +13,20 @@
     "test:watch": "vitest",
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
-    "icons": "node scripts/generate-icons.mjs"
+    "icons": "node scripts/generate-icons.mjs",
+    "smoke:live": "node scripts/smoke-live.mjs",
+    "cap:sync": "cap sync",
+    "cap:android": "cap open android",
+    "cap:ios": "cap open ios"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
+    "@capacitor-community/background-geolocation": "1.2.26",
+    "@capacitor/android": "7.6.9",
+    "@capacitor/core": "7.6.9",
+    "@capacitor/ios": "7.6.9",
     "@libsql/client": "^0.15.15",
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.4",
@@ -31,6 +39,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@capacitor/cli": "7.6.9",
     "@eslint/eslintrc": "^3.3.7",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^22.20.5",

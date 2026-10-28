@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
+import { DeviceSettings } from "@/components/DeviceSettings";
 import { PageHeader } from "@/components/Nav";
 import { api, formatDistance } from "@/lib/client/api";
 import { useGeolocation } from "@/lib/client/hooks";
@@ -67,14 +69,12 @@ export default function HelpPage() {
                   Call
                 </a>
               )}
-              <a
-                href={`https://www.google.com/maps/dir/?api=1&destination=${p.point[1]},${p.point[0]}&travelmode=walking`}
-                target="_blank"
-                rel="noopener noreferrer"
+              <Link
+                href={`/?to=${p.point[0]},${p.point[1]}&label=${encodeURIComponent(p.name ?? title.replace(/s$/, ""))}`}
                 className="rounded-lg bg-brand-600 px-3 py-1.5 font-medium text-white"
               >
-                Go
-              </a>
+                Safe route
+              </Link>
             </li>
           ))}
         </ul>
@@ -103,6 +103,8 @@ export default function HelpPage() {
         {section("Police stations", help?.police, "No police station mapped within 3 km.")}
         {section("Hospitals", help?.hospitals, "No hospital mapped within 3 km.")}
         {help && help.pharmacies.length > 0 && section("24-hour pharmacies", help.pharmacies, "")}
+
+        <DeviceSettings />
 
         <div>
           <h2 className="mb-2 font-semibold text-slate-900">Safety tips</h2>

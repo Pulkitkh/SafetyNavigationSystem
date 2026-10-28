@@ -3,20 +3,16 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId, sha256 } from "@/lib/server/auth";
 import { json, parseBody, rateLimit, requireUser, route } from "@/lib/server/http";
-import { endOpenTrips } from "@/lib/server/trips";
+import { endOpenTrips, expectedArrivalFor } from "@/lib/server/trips";
 import { startTripInput } from "@/lib/server/validation";
 import { simplify, type LngLat } from "@/lib/geo";
-
-/** Rides in Indian cities run well over free-flow routing estimates; walking estimates are close. */
-const RIDE_TIME_FACTOR = 1.5;
 
 export const POST = route(async (req: NextRequest) => {
   const user = await requireUser();
   rateLimit(req, "trip-start", 20, 60 * 60_000);
   const input = await parseBody(req, startTripInput);
   await endOpenTrips(user.id);
-  const factor = input.mode === "ride" ? RIDE_TIME_FACTOR : 1.1;
-  const expectedArrival = new Date(Date.now() + input.durationS * 1000 * factor + 3 * 60_000);
+  const expectedArrival = expectedArrivalFor(input.mode, input.durationS);
   const route = simplify(input.route as LngLat[], 3);
   const db = await getDb();
   const [trip] = await db

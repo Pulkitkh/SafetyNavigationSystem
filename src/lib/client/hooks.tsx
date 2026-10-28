@@ -2,7 +2,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "./api";
-import { store, type LastFix, type StoredContact } from "./store";
+import { isNativeApp, watchBackgroundPosition } from "./native";
+import { DEFAULT_PREFS, store, type LastFix, type Prefs, type StoredContact } from "./store";
 
 export interface Me {
   id: string;
@@ -84,17 +85,29 @@ export function useGeolocation(enabled = true, keepHistory = false): GeoState {
   useEffect(() => {
     const cachedFix = store.lastFix();
     if (cachedFix) setState((s) => ({ ...s, fix: s.fix ?? cachedFix }));
+    const accept = (fix: LastFix) => {
+      store.setLastFix(fix);
+      if (keepHistory) historyRef.current = [...historyRef.current.slice(-300), fix];
+      setState({ fix, error: null, history: keepHistory ? historyRef.current : [] });
+    };
+    // In the native app, journeys use background GPS so tracking survives a locked screen.
+    if (enabled && keepHistory && isNativeApp()) {
+      return watchBackgroundPosition(accept, (code) =>
+        setState((s) => ({
+          ...s,
+          error:
+            code === "NOT_AUTHORIZED"
+              ? "Location permission is off. Allow \"Always\" location for SafeNav in Settings so it can protect you with the screen locked."
+              : "Can't get your location right now. Move to an open area or check that GPS is on.",
+        })),
+      );
+    }
     if (!enabled || typeof navigator === "undefined" || !navigator.geolocation) {
       if (enabled) setState((s) => ({ ...s, error: "Location is not supported on this device" }));
       return;
     }
     const id = navigator.geolocation.watchPosition(
-      (pos) => {
-        const fix: LastFix = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy, at: pos.timestamp || Date.now() };
-        store.setLastFix(fix);
-        if (keepHistory) historyRef.current = [...historyRef.current.slice(-300), fix];
-        setState({ fix, error: null, history: keepHistory ? historyRef.current : [] });
-      },
+      (pos) => accept({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy, at: pos.timestamp || Date.now() }),
       (err) => {
         const message =
           err.code === err.PERMISSION_DENIED
@@ -147,4 +160,20 @@ export async function batteryLevel(): Promise<number | undefined> {
   } catch {
     return undefined;
   }
+}
+
+/** Device preferences, kept in sync across components on the same page. */
+export function usePrefs(): [Prefs, (patch: Partial<Prefs>) => void] {
+  const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
+  useEffect(() => {
+    const sync = () => setPrefs(store.prefs());
+    sync();
+    window.addEventListener("safenav:prefs", sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener("safenav:prefs", sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
+  return [prefs, store.setPrefs];
 }

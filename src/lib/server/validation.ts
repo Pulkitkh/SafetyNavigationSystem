@@ -46,6 +46,7 @@ export const planInput = z.object({
   from: point,
   to: point,
   mode: z.enum(["walk", "ride"]).default("walk"),
+  stepFree: z.boolean().optional().default(false),
   departAt: z
     .string()
     .datetime({ offset: true })
@@ -112,4 +113,10 @@ export const sosInput = z.object({
   lng: lng.optional(),
   accuracy: z.number().min(0).max(10_000).optional(),
   trigger: z.enum(["manual", "missed_checkin", "deviation"]).default("manual"),
+});
+
+/** A new route mid-journey, e.g. after leaving the planned one. */
+export const rerouteInput = z.object({
+  route: z.array(point).min(2).max(20_000),
+  durationS: z.number().positive().max(24 * 3600),
 });

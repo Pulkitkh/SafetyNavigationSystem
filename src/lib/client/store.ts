@@ -35,7 +35,20 @@ export interface LastFix {
   at: number;
 }
 
+/** Per-device preferences; they don't need an account. */
+export interface Prefs {
+  /** Plan routes without steps or rough surfaces. */
+  stepFree: boolean;
+  /** Spoken turn-by-turn directions during a journey. */
+  voice: boolean;
+  /** Shaking the phone hard starts an SOS countdown. */
+  shakeSos: boolean;
+}
+
+export const DEFAULT_PREFS: Prefs = { stepFree: false, voice: true, shakeSos: false };
+
 const KEYS = {
+  prefs: "safenav.prefs",
   contacts: "safenav.contacts",
   journey: "safenav.journey",
   fix: "safenav.lastFix",
@@ -61,6 +74,11 @@ function write(key: string, value: unknown) {
 }
 
 export const store = {
+  prefs: (): Prefs => ({ ...DEFAULT_PREFS, ...(read<Partial<Prefs>>(KEYS.prefs) ?? {}) }),
+  setPrefs: (patch: Partial<Prefs>) => {
+    write(KEYS.prefs, { ...store.prefs(), ...patch });
+    if (typeof window !== "undefined") window.dispatchEvent(new Event("safenav:prefs"));
+  },
   contacts: () => read<StoredContact[]>(KEYS.contacts) ?? [],
   setContacts: (c: StoredContact[]) => write(KEYS.contacts, c),
   journey: () => read<ActiveJourney>(KEYS.journey),

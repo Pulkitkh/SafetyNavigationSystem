@@ -152,6 +152,51 @@ describe("scoreRoute", () => {
   });
 });
 
+describe("conditions and accessibility", () => {
+  it("floods underpasses in heavy rain and marks back lanes at night", () => {
+    expect(walkpathScore({ highway: "footway", tunnel: "yes" }, false, { heavyRain: true })).toMatchObject({ score: 20, reason: expect.stringMatching(/waterlogged/) });
+    expect(walkpathScore({ highway: "service", service: "alley" }, true)).toMatchObject({ score: 40, reason: "Narrow back lane" });
+    expect(walkpathScore({ highway: "service", service: "alley" }, false).score).toBe(70);
+  });
+
+  it("treats steps and rough ground as near-impassable for step-free travel", () => {
+    expect(walkpathScore({ highway: "steps" }, false).score).toBe(65);
+    expect(walkpathScore({ highway: "steps" }, false, { stepFree: true })).toMatchObject({ score: 5, reason: "Steps (not step-free)" });
+    expect(walkpathScore({ highway: "footway", surface: "gravel" }, false, { stepFree: true }).score).toBe(30);
+    expect(walkpathScore({ highway: "footway", wheelchair: "no" }, false, { stepFree: true }).score).toBe(15);
+    expect(walkpathScore({ highway: "residential", wheelchair: "yes" }, false, { stepFree: true }).score).toBe(85);
+  });
+
+  const start: LngLat = [75.86, 22.72];
+  const line = [start, destinationPoint(start, 0, 600)];
+
+  it("lowers lighting in fog after dark", () => {
+    const index = new FeatureIndex({ roads: [{ id: "w", tags: { highway: "residential", lit: "yes" }, geometry: line }], pois: [], areas: [] }, []);
+    const clear = scoreRoute(line, 450, index, { departAt: NIGHT, tz: TZ });
+    const fog = scoreRoute(line, 450, index, { departAt: NIGHT, tz: TZ, foggy: true });
+    expect(fog.factors.lighting).toBe(80);
+    expect(clear.factors.lighting).toBe(100);
+    expect(fog.score).toBeLessThan(clear.score);
+    const dayFog = scoreRoute(line, 450, index, { departAt: DAY, tz: TZ, foggy: true });
+    expect(dayFog.score).toBe(scoreRoute(line, 450, index, { departAt: DAY, tz: TZ }).score);
+  });
+
+  it("counts flights of steps and flags them for step-free users", () => {
+    const mid = destinationPoint(start, 0, 300);
+    const roads = [
+      { id: "w1", tags: { highway: "footway" }, geometry: [start, mid] },
+      { id: "s1", tags: { highway: "steps" }, geometry: [mid, destinationPoint(start, 0, 400)] },
+      { id: "w2", tags: { highway: "footway" }, geometry: [destinationPoint(start, 0, 400), destinationPoint(start, 0, 600)] },
+    ];
+    const index = new FeatureIndex({ roads, pois: [], areas: [] }, []);
+    const normal = scoreRoute(line, 450, index, { departAt: DAY, tz: TZ });
+    const stepFree = scoreRoute(line, 450, index, { departAt: DAY, tz: TZ, stepFree: true });
+    expect(normal.stats.steps).toBe(1);
+    expect(stepFree.score).toBeLessThan(normal.score);
+    expect(stepFree.segments.some((s) => s.reasons.includes("Steps (not step-free)"))).toBe(true);
+  });
+});
+
 describe("helpers", () => {
   it("merges consecutive weak segments into stretches", () => {
     const seg = (from: number, score: number, reasons: string[] = []): ScoredSegment => ({

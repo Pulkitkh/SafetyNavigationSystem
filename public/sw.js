@@ -1,7 +1,7 @@
 // SafeNav service worker: keeps the app shell (including the SOS and Help
 // screens) available offline. API calls are never cached here.
-const VERSION = "safenav-v1";
-const SHELL = ["/", "/help", "/journey", "/contacts", "/manifest.webmanifest", "/icons/icon-192.png"];
+const VERSION = "safenav-v2";
+const SHELL = ["/", "/help", "/journey", "/contacts", "/fake-call", "/manifest.webmanifest", "/icons/icon-192.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

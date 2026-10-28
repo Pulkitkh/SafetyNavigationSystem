@@ -9,6 +9,14 @@ export const SHARE_GRACE_MS = 2 * 3600_000;
 /** A trip that stops reporting is closed after this long. */
 export const TRIP_MAX_MS = 12 * 3600_000;
 
+/** Rides in Indian cities run well over free-flow routing estimates; walking estimates are close. */
+const TIME_FACTOR = { walk: 1.1, ride: 1.5 } as const;
+
+/** When a trip should arrive, with slack so monitoring doesn't nag on normal delays. */
+export function expectedArrivalFor(mode: "walk" | "ride", durationS: number, now = Date.now()) {
+  return new Date(now + durationS * 1000 * TIME_FACTOR[mode] + 3 * 60_000);
+}
+
 export async function ownedTrip(userId: string, tripId: string): Promise<Trip> {
   const db = await getDb();
   const trip = await db.query.trips.findFirst({ where: and(eq(schema.trips.id, tripId), eq(schema.trips.userId, userId)) });

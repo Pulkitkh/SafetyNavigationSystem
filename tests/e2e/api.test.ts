@@ -122,6 +122,18 @@ run("API end to end", () => {
     expect((await new Client().call(`/api/share/${token()}`)).status).toBe(404);
   });
 
+  it("reroutes an open trip and the live link follows the new route", async () => {
+    const newRoute = [route[0], [75.859, 22.7215], route[2]];
+    const bad = await asha.call(`/api/trips/${tripId}/reroute`, { method: "POST", json: { route: [route[0]], durationS: 600 } });
+    expect(bad.status).toBe(400);
+    expect((await ravi.call(`/api/trips/${tripId}/reroute`, { method: "POST", json: { route: newRoute, durationS: 600 } })).status).toBe(404);
+    const ok = await asha.call(`/api/trips/${tripId}/reroute`, { method: "POST", json: { route: newRoute, durationS: 600 } });
+    expect(ok.status).toBe(200);
+    expect(new Date(ok.body.trip.expectedArrival).getTime()).toBeGreaterThan(Date.now());
+    const view = await new Client().call(`/api/share/${share}`);
+    expect(view.body.route).toHaveLength(3);
+  });
+
   it("raises a check-in alert and then an SOS on the same live link", async () => {
     expect((await asha.call(`/api/trips/${tripId}`, { method: "PATCH", json: { status: "alert", reason: "You haven't moved for a while." } })).status).toBe(200);
     expect((await new Client().call(`/api/share/${share}`)).body).toMatchObject({ status: "alert", alertReason: "You haven't moved for a while." });
@@ -163,6 +175,16 @@ run("API end to end", () => {
     else expect(plan.body.routes.length).toBeGreaterThan(0);
     const same = await asha.call("/api/routes/plan", { method: "POST", json: { from: route[0], to: route[0] } });
     expect(same.status).toBe(400);
+  });
+
+  it("reports database and upstream health", async () => {
+    const shallow = await new Client().call("/api/health?deep=0");
+    expect(shallow.status).toBe(200);
+    expect(shallow.body).toMatchObject({ ok: true, database: true });
+    const deep = await new Client().call("/api/health");
+    expect([200, 503]).toContain(deep.status);
+    expect(deep.body.probes.length).toBeGreaterThan(5);
+    expect(Object.keys(deep.body.services)).toContain("street data (Overpass)");
   });
 
   it("logs out", async () => {

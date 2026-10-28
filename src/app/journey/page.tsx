@@ -6,10 +6,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Map, { type MapMarker } from "@/components/Map";
 import { useSos } from "@/components/Sos";
 import { api, formatDistance } from "@/lib/client/api";
-import { batteryLevel, useGeolocation, useSession, useWakeLock } from "@/lib/client/hooks";
+import { batteryLevel, useGeolocation, usePrefs, useSession, useWakeLock } from "@/lib/client/hooks";
+import { isNativeApp } from "@/lib/client/native";
+import { speak, useVoiceGuidance, voiceSupported } from "@/lib/client/voice";
 import { store, type ActiveJourney } from "@/lib/client/store";
 import { distanceToPolyline, type LngLat } from "@/lib/geo";
 import { ANOMALY_TEXT, CHECKIN_TIMEOUT_S, evaluate, initialMonitorState, MONITOR_CONFIG, snooze, type Anomaly, type Fix } from "@/lib/monitor";
+import type { PlanResult } from "@/lib/safety/plan";
 import { detectPlatform, journeyMessage, smsUri, whatsappUri } from "@/lib/sos";
 
 const PUSH_EVERY_MS = 10_000;
@@ -75,6 +78,10 @@ export default function JourneyPage() {
       sosActive={sos.active}
       onSos={sos.trigger}
       isNew={isNew}
+      onRerouted={(j) => {
+        store.setJourney(j);
+        setJourney(j);
+      }}
       onEnded={() => {
         store.setJourney(null);
         router.push("/");
@@ -92,6 +99,7 @@ function ActiveJourneyView({
   sosActive,
   onSos,
   isNew,
+  onRerouted,
   onEnded,
 }: {
   journey: ActiveJourney;
@@ -102,6 +110,7 @@ function ActiveJourneyView({
   sosActive: boolean;
   onSos: (t?: "manual" | "missed_checkin" | "deviation") => void;
   isNew: boolean;
+  onRerouted: (j: ActiveJourney) => void;
   onEnded: () => void;
 }) {
   const cfg = MONITOR_CONFIG[journey.mode];
@@ -113,12 +122,22 @@ function ActiveJourneyView({
   const [offline, setOffline] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [platform, setPlatform] = useState<"ios" | "android" | "other">("other");
+  const [offRouteM, setOffRouteM] = useState(0);
+  const [rerouting, setRerouting] = useState(false);
+  const [rerouteError, setRerouteError] = useState<string | null>(null);
+  const [prefs, setPrefs] = usePrefs();
+  const [canSpeak, setCanSpeak] = useState(false);
+  const [nativeApp, setNativeApp] = useState(false);
   const lastPush = useRef(0);
   const arrivalSnoozedUntil = useRef(0);
   const liveUrl = typeof window !== "undefined" ? `${window.location.origin}/t/${journey.shareToken}` : "";
   const shareText = journeyMessage(userName, journey.destLabel, liveUrl, new Date(journey.expectedArrival), journey.vehicle);
 
-  useEffect(() => setPlatform(detectPlatform(navigator.userAgent)), []);
+  useEffect(() => {
+    setPlatform(detectPlatform(navigator.userAgent));
+    setCanSpeak(voiceSupported());
+    setNativeApp(isNativeApp());
+  }, []);
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
@@ -155,7 +174,10 @@ function ActiveJourneyView({
     const fixes: Fix[] = geo.history.map((f) => ({ point: [f.lng, f.lat], accuracy: f.accuracy, at: f.at }));
     const r = evaluate(fixes, journey.route, journey.dest, journey.expectedArrival, cfg, monitorRef.current, now);
     monitorRef.current = r.state;
-    if (fixes.length) setRemainingM(r.remainingM);
+    if (fixes.length) {
+      setRemainingM(r.remainingM);
+      setOffRouteM(r.distanceToRouteM);
+    }
     if (r.arrived && now > arrivalSnoozedUntil.current) {
       setArrived(true);
       setCheckin(null);
@@ -165,8 +187,9 @@ function ActiveJourneyView({
       setCheckin({ anomaly: r.anomaly, deadline: Date.now() + CHECKIN_TIMEOUT_S * 1000 });
       void setStatus("alert", ANOMALY_TEXT[r.anomaly]);
       if (navigator.vibrate) navigator.vibrate([400, 200, 400]);
+      if (prefs.voice) speak(`Are you OK? ${ANOMALY_TEXT[r.anomaly]} Tap I'm OK, or SOS will be sent.`, true);
     }
-  }, [geo.history, now, arrived, sosActive, checkin, journey, cfg, setStatus]);
+  }, [geo.history, now, arrived, sosActive, checkin, journey, cfg, setStatus, prefs.voice]);
 
   // Escalate an unanswered check-in.
   useEffect(() => {
@@ -181,6 +204,40 @@ function ActiveJourneyView({
     monitorRef.current = snooze(monitorRef.current, checkin.anomaly);
     setCheckin(null);
     void setStatus("active");
+  };
+
+  /** Plan a fresh, safety-scored route from where the user is now and switch to it. */
+  const reroute = async () => {
+    const f = geo.fix;
+    if (!f || rerouting) return;
+    setRerouting(true);
+    setRerouteError(null);
+    try {
+      const plan = await api<PlanResult>("/api/routes/plan", {
+        method: "POST",
+        json: { from: [f.lng, f.lat], to: journey.dest, mode: journey.mode, stepFree: journey.mode === "walk" && prefs.stepFree },
+      });
+      const best = plan.routes[0];
+      if (!best) throw new Error("No route found from here");
+      const { trip } = await api<{ trip: { expectedArrival: string } }>(`/api/trips/${journey.tripId}/reroute`, {
+        method: "POST",
+        json: { route: best.coordinates, durationS: best.duration },
+      });
+      monitorRef.current = initialMonitorState();
+      onRerouted({
+        ...journey,
+        route: best.coordinates,
+        steps: best.steps.map((s) => ({ instruction: s.instruction, distance: s.distance, location: s.location })),
+        expectedArrival: new Date(trip.expectedArrival).getTime(),
+      });
+      setCheckin(null);
+      void setStatus("active");
+      if (prefs.voice) speak(`New route. ${best.safety ? `Safety score ${best.safety.score}.` : ""}`, true);
+    } catch (err) {
+      setRerouteError((err as Error).message);
+    } finally {
+      setRerouting(false);
+    }
   };
 
   const end = async (reason: string) => {
@@ -198,6 +255,8 @@ function ActiveJourneyView({
     );
   }, [here, journey]);
   const nextStepDist = nextStep && here ? Math.max(0, distanceToPolyline(nextStep.location, journey.route).along - distanceToPolyline(here, journey.route).along) : null;
+  useVoiceGuidance(prefs.voice && !arrived && !checkin && !sosActive, nextStep, nextStepDist);
+  const offRoute = journey.mode === "walk" && offRouteM > cfg.offRouteM;
 
   const markers: MapMarker[] = [{ id: "dest", point: journey.dest, kind: "dest", label: journey.destLabel }];
   const late = now > journey.expectedArrival;
@@ -243,6 +302,15 @@ function ActiveJourneyView({
         </div>
 
         {geo.error && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">{geo.error}</p>}
+        {offRoute && (
+          <div className="rounded-2xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+            <p>You&apos;re {formatDistance(offRouteM)} from the planned route.</p>
+            <button onClick={reroute} disabled={rerouting} className="mt-2 w-full rounded-lg bg-amber-600 px-3 py-2 font-semibold text-white disabled:opacity-60">
+              {rerouting ? "Finding the safest way from here…" : "Find a safe route from here"}
+            </button>
+          </div>
+        )}
+        {rerouteError && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{rerouteError}</p>}
         {offline && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">No connection — your contacts see your last known position. SOS by SMS still works.</p>}
 
         {(isNew || contacts.length === 0) && (
@@ -277,6 +345,21 @@ function ActiveJourneyView({
           </button>
         )}
 
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          {canSpeak && (
+            <button
+              onClick={() => setPrefs({ voice: !prefs.voice })}
+              aria-pressed={prefs.voice}
+              className={`rounded-xl border px-3 py-2.5 font-medium ${prefs.voice ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-300 bg-white text-slate-700"}`}
+            >
+              Voice directions {prefs.voice ? "on" : "off"}
+            </button>
+          )}
+          <Link href="/fake-call" className={`rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-center font-medium text-slate-700 ${canSpeak ? "" : "col-span-2"}`}>
+            Fake call
+          </Link>
+        </div>
+
         <div className="rounded-2xl bg-white p-4 text-sm text-slate-600">
           <p className="font-medium text-slate-800">SafeNav is watching for</p>
           <ul className="mt-1 list-inside list-disc space-y-0.5">
@@ -284,7 +367,11 @@ function ActiveJourneyView({
             <li>no movement for {Math.round(cfg.stoppedForMs / 60_000)} minutes</li>
             <li>arriving more than {Math.round(cfg.overdueGraceMs / 60_000)} minutes late</li>
           </ul>
-          <p className="mt-2">Keep this screen open: phones pause location in the background.</p>
+          <p className="mt-2">
+            {nativeApp
+              ? "Tracking continues with the screen locked while the SafeNav notification is showing."
+              : "Keep this screen open: browsers pause location in the background. The SafeNav app keeps tracking with the screen locked."}
+          </p>
         </div>
 
         {confirmEnd ? (
@@ -318,6 +405,17 @@ function ActiveJourneyView({
               <button onClick={answerOk} className="rounded-xl bg-green-600 py-3 text-lg font-semibold text-white">
                 I&apos;m OK
               </button>
+              {checkin.anomaly === "off_route" && journey.mode === "walk" && (
+                <button
+                  onClick={() => {
+                    answerOk();
+                    void reroute();
+                  }}
+                  className="rounded-xl border border-green-600 py-2.5 font-semibold text-green-700"
+                >
+                  I&apos;m OK, reroute me
+                </button>
+              )}
               <button
                 onClick={() => {
                   setCheckin(null);

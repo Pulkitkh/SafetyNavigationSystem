@@ -7,7 +7,7 @@ import Map, { type MapMarker, type MapRoute } from "@/components/Map";
 import { PlaceSearch, type PlaceValue } from "@/components/PlaceSearch";
 import { RouteCard } from "@/components/RouteCard";
 import { api, newShareToken } from "@/lib/client/api";
-import { useGeolocation, useSession } from "@/lib/client/hooks";
+import { useGeolocation, usePrefs, useSession } from "@/lib/client/hooks";
 import { store } from "@/lib/client/store";
 import type { LngLat } from "@/lib/geo";
 import { VEHICLE_LABELS, VEHICLE_TYPES, type VehicleType } from "@/lib/phone";
@@ -23,6 +23,7 @@ function localDateTimeValue(d: Date) {
 export default function PlanPage() {
   const router = useRouter();
   const { me } = useSession();
+  const [prefs, setPrefs] = usePrefs();
   const geo = useGeolocation();
   const here: LngLat | null = geo.fix ? [geo.fix.lng, geo.fix.lat] : null;
 
@@ -41,6 +42,15 @@ export default function PlanPage() {
 
   useEffect(() => setActiveJourney(!!store.journey()), []);
 
+  // Deep link from the Help page or elsewhere: /?to=lng,lat&label=Name
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const [lng, lat] = (q.get("to") ?? "").split(",").map(Number);
+    if (Number.isFinite(lng) && Number.isFinite(lat) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+      setTo({ label: q.get("label")?.slice(0, 120) || "Destination", point: [lng, lat] });
+    }
+  }, []);
+
   // Default the start to the current location once GPS is available.
   useEffect(() => {
     if (!from && here) setFrom({ label: "Your current location", point: here, current: true });
@@ -55,7 +65,7 @@ export default function PlanPage() {
     try {
       const startPoint = from.current && here ? here : from.point;
       const departAt = leaveLater ? new Date(departLocal).toISOString() : undefined;
-      const result = await api<PlanResult>("/api/routes/plan", { method: "POST", json: { from: startPoint, to: to.point, mode, departAt } });
+      const result = await api<PlanResult>("/api/routes/plan", { method: "POST", json: { from: startPoint, to: to.point, mode, departAt, stepFree: mode === "walk" && prefs.stepFree } });
       setPlan(result);
       setSelectedId(result.routes[0]?.id ?? null);
     } catch (err) {
@@ -163,7 +173,21 @@ export default function PlanPage() {
           <PlaceSearch label="Start" placeholder="Start: search a place" value={from} onChange={setFrom} near={here} allowCurrent currentPoint={here} />
           <PlaceSearch label="Destination" placeholder="Where to?" value={to} onChange={setTo} near={here ?? from?.point} />
 
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+            {mode === "walk" && (
+              <label className="flex items-center gap-1.5 text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={prefs.stepFree}
+                  onChange={(e) => {
+                    setPrefs({ stepFree: e.target.checked });
+                    setPlan(null);
+                  }}
+                  className="h-4 w-4"
+                />
+                Step-free
+              </label>
+            )}
             <label className="flex items-center gap-1.5 text-slate-700">
               <input type="checkbox" checked={leaveLater} onChange={(e) => setLeaveLater(e.target.checked)} className="h-4 w-4" />
               Leave later
@@ -192,10 +216,15 @@ export default function PlanPage() {
         <div className="space-y-3 px-4 pb-4">
           {error && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p>}
           {plan?.dataNote && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">{plan.dataNote}</p>}
-          {plan?.weather?.raining && <p className="rounded-xl bg-sky-50 p-3 text-sm text-sky-900">It&apos;s raining: streets are likely emptier than usual.</p>}
+          {plan?.weather && <WeatherNote weather={plan.weather} later={leaveLater} />}
+          {plan?.stepFree && (
+            <p className="rounded-xl bg-violet-50 p-3 text-sm text-violet-900">
+              Step-free: routes with steps, unpaved or rough surfaces are ranked last. OpenStreetMap may not map every kerb or ramp.
+            </p>
+          )}
 
           {plan?.routes.map((r) => (
-            <RouteCard key={r.id} route={r} selected={r.id === selected?.id} onSelect={() => setSelectedId(r.id)} mode={plan.mode} />
+            <RouteCard key={r.id} route={r} selected={r.id === selected?.id} onSelect={() => setSelectedId(r.id)} mode={plan.mode} stepFree={plan.stepFree} />
           ))}
 
           {plan && selected && (
@@ -268,5 +297,24 @@ export default function PlanPage() {
         />
       </section>
     </main>
+  );
+}
+
+function WeatherNote({ weather, later }: { weather: NonNullable<PlanResult["weather"]>; later: boolean }) {
+  const when = later ? "at your departure time" : "right now";
+  const notes: string[] = [];
+  if (weather.heavyRain) notes.push(`Heavy rain is forecast ${when}: streets will be emptier and underpasses may flood.`);
+  else if (weather.isRaining) notes.push(`Rain is forecast ${when}: streets are likely emptier than usual.`);
+  if (weather.foggy) {
+    const vis = weather.visibilityM != null ? ` (visibility about ${weather.visibilityM < 1000 ? `${Math.round(weather.visibilityM / 50) * 50} m` : `${(weather.visibilityM / 1000).toFixed(1)} km`})` : "";
+    notes.push(`Fog is forecast${vis}: drivers and passers-by see less, so lighting counts for less.`);
+  }
+  if (!notes.length) return null;
+  return (
+    <div className="space-y-1 rounded-xl bg-sky-50 p-3 text-sm text-sky-900">
+      {notes.map((n) => (
+        <p key={n}>{n}</p>
+      ))}
+    </div>
   );
 }

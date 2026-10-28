@@ -37,11 +37,13 @@ export function RouteCard({
   selected,
   onSelect,
   mode,
+  stepFree = false,
 }: {
   route: PlannedRoute;
   selected: boolean;
   onSelect: () => void;
   mode: "walk" | "ride";
+  stepFree?: boolean;
 }) {
   const s = route.safety;
   return (
@@ -60,6 +62,11 @@ export function RouteCard({
             {s && (
               <span className="rounded-full px-2 py-0.5 text-xs font-medium text-white" style={{ background: scoreColor(s.score) }}>
                 {BAND_TEXT[s.band]}
+              </span>
+            )}
+            {stepFree && s && (
+              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.stats.steps ? "bg-amber-100 text-amber-900" : "bg-violet-100 text-violet-900"}`}>
+                {s.stats.steps ? `${s.stats.steps} flight${s.stats.steps > 1 ? "s" : ""} of steps` : "No mapped steps"}
               </span>
             )}
             {route.tags.map((t) => (
@@ -134,6 +141,10 @@ export function RouteCard({
             ))}
           </div>
         </div>
+      )}
+
+      {selected && !s && mode === "walk" && (
+        <p className="mt-3 text-sm text-slate-600">Not scored. Directions and live monitoring still work.</p>
       )}
 
       {selected && !s && mode === "ride" && (

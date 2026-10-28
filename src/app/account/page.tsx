@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { DeviceSettings } from "@/components/DeviceSettings";
 import { PageHeader } from "@/components/Nav";
 import { api } from "@/lib/client/api";
 import { useSession } from "@/lib/client/hooks";
@@ -83,6 +84,8 @@ export default function AccountPage() {
         </label>
 
         {msg && <p className="text-sm text-slate-600">{msg}</p>}
+
+        <DeviceSettings />
 
         <div className="flex gap-3 text-sm">
           <Link href="/contacts" className="text-brand-600 underline">

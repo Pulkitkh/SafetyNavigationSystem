@@ -92,4 +92,22 @@ describe("route candidates", () => {
     expect(close[0].id).toBe("fast");
     expect(close[0].tags).toContain("recommended");
   });
+
+  it("never recommends a route with steps to step-free users when a step-free one exists", () => {
+    const mk = (id: string, duration: number, score: number, steps: number): PlannedRoute => ({
+      id,
+      coordinates: [],
+      distance: 0,
+      duration,
+      steps: [],
+      tags: [],
+      safety: { score, stats: { steps } } as PlannedRoute["safety"],
+    });
+    const ranked = rankRoutes([mk("stairs", 600, 85, 2), mk("ramp", 800, 70, 0), mk("other", 700, 60, 1)], { stepFree: true });
+    // The usable route leads; the rest follow by safety.
+    expect(ranked.map((r) => r.id)).toEqual(["ramp", "stairs", "other"]);
+    expect(ranked[0].tags).toEqual(["safest", "recommended"]);
+    // Without the preference the safest overall wins.
+    expect(rankRoutes([mk("stairs", 600, 85, 2), mk("ramp", 800, 70, 0)])[0].id).toBe("stairs");
+  });
 });

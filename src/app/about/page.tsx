@@ -92,7 +92,7 @@ export default function AboutPage() {
         <section>
           <h2 className="mb-1 text-base font-semibold text-slate-900">Data sources</h2>
           <p>
-            Map data © OpenStreetMap contributors (ODbL). Routing by OSRM, search by Photon and Nominatim, map tiles by OpenFreeMap, weather by Open-Meteo.
+            Map data © OpenStreetMap contributors (ODbL). Routing by OSRM and Valhalla, search by Photon and Nominatim, map tiles by OpenFreeMap, weather by Open-Meteo.
           </p>
         </section>
 
