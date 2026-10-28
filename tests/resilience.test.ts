@@ -1,6 +1,6 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { getDb, resetDbForTests, schema } from "@/lib/db";
-import { cached, endpoints, UpstreamError, withFailover } from "@/lib/providers/http";
+import { cached, COOL_DOWN_MS, endpoints, resetFailoverForTests, SkipEndpoint, UpstreamError, withFailover } from "@/lib/providers/http";
 import { assertCompleteOverpass } from "@/lib/providers/overpass";
 import { decodePolyline, parseValhallaTrip } from "@/lib/providers/valhalla";
 import { classifyWeather, pickHour } from "@/lib/providers/weather";
@@ -8,6 +8,8 @@ import { summarise } from "@/lib/providers/health";
 import { createShakeDetector } from "@/lib/client/shake";
 
 describe("endpoint failover", () => {
+  beforeEach(() => resetFailoverForTests());
+
   it("reads comma-separated overrides and falls back to defaults", () => {
     expect(endpoints(undefined, ["https://a"])).toEqual(["https://a"]);
     expect(endpoints(" https://x/ , https://y ", ["https://a"])).toEqual(["https://x", "https://y"]);
@@ -24,6 +26,67 @@ describe("endpoint failover", () => {
     });
     expect(out).toBe("c");
     expect(tried).toEqual(["a", "b", "c"]);
+  });
+
+  it("skips a mirror that just failed until its cool-down ends, backing off on repeat failures", async () => {
+    let t = 1_000_000;
+    const clock = () => t;
+    const tried: string[] = [];
+    const call = (failing: Set<string>) =>
+      withFailover(
+        ["a", "b"],
+        async (base) => {
+          tried.push(base);
+          if (failing.has(base)) throw new UpstreamError("timeout", "x", 504);
+          return base;
+        },
+        clock,
+      );
+    expect(await call(new Set(["a"]))).toBe("b");
+    tried.length = 0;
+    expect(await call(new Set(["a"]))).toBe("b");
+    expect(tried).toEqual(["b"]); // a is cooling down, not retried
+    t += COOL_DOWN_MS + 1;
+    tried.length = 0;
+    expect(await call(new Set(["a"]))).toBe("b"); // a fails again: cool-down doubles
+    t += COOL_DOWN_MS + 1;
+    tried.length = 0;
+    expect(await call(new Set())).toBe("b");
+    expect(tried).toEqual(["b"]);
+    t += COOL_DOWN_MS;
+    tried.length = 0;
+    expect(await call(new Set())).toBe("a");
+    expect(tried).toEqual(["a"]);
+  });
+
+  it("fails at once while every mirror is cooling down, without calling any", async () => {
+    let t = 0;
+    const clock = () => t;
+    const tried: string[] = [];
+    const fail = async (base: string) => {
+      tried.push(base);
+      throw new UpstreamError("down", "x", 503);
+    };
+    await expect(withFailover(["a", "b"], fail, clock)).rejects.toThrow("down");
+    tried.length = 0;
+    t += 1000;
+    await expect(withFailover(["a", "b"], fail, clock)).rejects.toThrow(/failed recently/);
+    expect(tried).toEqual([]);
+  });
+
+  it("does not penalise a mirror the caller chose to skip", async () => {
+    const t = 0;
+    const clock = () => t;
+    await expect(
+      withFailover(
+        ["a"],
+        async () => {
+          throw new SkipEndpoint("out of time");
+        },
+        clock,
+      ),
+    ).rejects.toThrow("out of time");
+    expect(await withFailover(["a"], async (b) => b, clock)).toBe("a");
   });
 
   it("stops on a client error, which another mirror would repeat", async () => {

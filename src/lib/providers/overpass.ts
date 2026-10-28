@@ -1,5 +1,5 @@
 import { simplify, type LngLat } from "@/lib/geo";
-import { cached, endpoints, fetchJson, UpstreamError, withFailover } from "./http";
+import { cached, endpoints, fetchJson, SkipEndpoint, UpstreamError, withFailover } from "./http";
 
 export type PoiKind =
   | "lamp"
@@ -275,13 +275,14 @@ const OVERPASS_BUDGET_MS = 45_000;
 async function runQuery(query: string, ttlMs: number) {
   return cached("overpass", query, ttlMs, () => {
     const deadline = Date.now() + OVERPASS_BUDGET_MS;
-    return withFailover(endpoints(process.env.OVERPASS_URL, OVERPASS_MIRRORS), async (url) => {
+    return withFailover(endpoints(process.env.OVERPASS_URL, OVERPASS_MIRRORS), async (url, remaining) => {
       const left = deadline - Date.now();
-      if (left < 5_000) throw new UpstreamError("OpenStreetMap data: out of time", "OpenStreetMap data");
+      if (left < 5_000) throw new SkipEndpoint("OpenStreetMap data: out of time");
       return assertCompleteOverpass(
         await fetchJson<OverpassResponse>(url, {
           service: "OpenStreetMap data",
-          timeoutMs: Math.min(40_000, left),
+          // A fair share of what's left, so one hanging mirror can't starve the others.
+          timeoutMs: Math.min(40_000, left, Math.max(20_000, left / remaining)),
           // The next mirror is the retry.
           retries: 0,
           init: {

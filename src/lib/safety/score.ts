@@ -311,8 +311,13 @@ export function defaultOpenProbability(kind: PoiKind, hour: number): number {
   switch (kind) {
     case "hospital":
     case "atm":
-    case "transit":
       return 1;
+    case "transit":
+      // City buses and metros mostly stop around 23:00 and restart near 05:30,
+      // so a stop brings people only while services run.
+      if (hour >= 6 && hour < 22) return 1;
+      if (hour >= 22 && hour < 23) return 0.6;
+      return 0.1;
     case "fuel":
       return hour >= 6 && hour < 22 ? 0.9 : 0.45;
     case "bank":

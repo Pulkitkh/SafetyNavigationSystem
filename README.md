@@ -84,6 +84,8 @@ The database schema is created automatically on first use (`data/safenav.db`). L
 
 **Any Node host or VPS:** run `npm run build && npm start` with `DATABASE_URL=file:/path/to/safenav.db` on a persistent disk.
 
+**Behind an outbound HTTP proxy:** Node's `fetch` ignores `HTTPS_PROXY` by default. Set `NODE_USE_ENV_PROXY=1` (Node 22.21+) so the server can reach the data services.
+
 For real traffic, self-host OSRM and Overpass (both are open source with Docker images) and point `OSRM_FOOT_URL`, `OSRM_CAR_URL` and `OVERPASS_URL` at them. The public community servers are meant for light use.
 
 ### Reliability
@@ -91,6 +93,7 @@ For real traffic, self-host OSRM and Overpass (both are open source with Docker 
 The public data services rate-limit and go down independently, so every call is built to degrade instead of failing:
 
 - **Mirrors:** each routing and Overpass variable takes a comma-separated list, tried in order. The built-in defaults already include three Overpass mirrors and two car-routing servers.
+- **Circuit breaker:** a mirror that fails or hangs is skipped for 1 minute, doubling up to 10 minutes on repeated failures. Overpass's time budget is shared across mirrors, so a dead server costs one slow request, not every request. When every mirror is cooling down, plans return immediately from the stale cache or unscored.
 - **Second engine:** if every OSRM server fails, routes come from Valhalla.
 - **Truncated data rejected:** Overpass reports timeouts as HTTP 200 with partial data. These responses are rejected and never cached, so routes are never silently scored on empty data.
 - **Stale cache:** expired cache entries are kept for 7 days and served when every upstream is down.

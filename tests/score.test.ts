@@ -60,6 +60,9 @@ describe("factor functions", () => {
     expect(defaultOpenProbability("shop", 11)).toBeGreaterThan(0.5);
     expect(defaultOpenProbability("shop", 23)).toBeLessThan(0.1);
     expect(defaultOpenProbability("hospital", 3)).toBe(1);
+    // Transit stops bring people only while services run.
+    expect(defaultOpenProbability("transit", 9)).toBe(1);
+    expect(defaultOpenProbability("transit", 1)).toBeLessThan(0.2);
   });
 
   it("evaluates OSM opening_hours in local time", () => {

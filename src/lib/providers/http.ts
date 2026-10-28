@@ -73,19 +73,50 @@ export function endpoints(envValue: string | undefined, defaults: string[]): str
   return configured.length ? configured : defaults;
 }
 
-/** Try `fn` against each base URL in turn; the first success wins. */
-export async function withFailover<T>(bases: string[], fn: (base: string) => Promise<T>): Promise<T> {
+/** First cool-down after a failure; it doubles on each further failure, up to the maximum. */
+export const COOL_DOWN_MS = 60_000;
+const MAX_COOL_DOWN_MS = 10 * 60_000;
+const breakers = new Map<string, { failures: number; until: number }>();
+
+/** Test helper: forget which mirrors are cooling down. */
+export function resetFailoverForTests() {
+  breakers.clear();
+}
+
+/** Thrown by a caller to pass over a mirror without counting it as a failure (e.g. out of time). */
+export class SkipEndpoint extends Error {}
+
+/**
+ * Try `fn` against each base URL in turn; the first success wins. A mirror that
+ * fails is skipped for a cool-down that doubles with each consecutive failure
+ * (circuit breaker), so a dead or hanging server costs its timeout once, not on
+ * every request. When every mirror is cooling down the call fails at once, and
+ * the caller serves stale data or degrades instead of waiting.
+ */
+export async function withFailover<T>(
+  bases: string[],
+  /** `remaining` counts this mirror and the ones still to try, so callers can share a time budget. */
+  fn: (base: string, remaining: number) => Promise<T>,
+  now = Date.now,
+): Promise<T> {
+  const healthy = bases.filter((b) => (breakers.get(b)?.until ?? 0) <= now());
+  if (!healthy.length) throw new UpstreamError("all endpoints failed recently; retrying after a short pause", "upstream", 503);
   let lastError: unknown;
-  for (const base of bases) {
+  for (const [i, base] of healthy.entries()) {
     try {
-      return await fn(base);
+      const value = await fn(base, healthy.length - i);
+      breakers.delete(base);
+      return value;
     } catch (err) {
       lastError = err;
+      if (err instanceof SkipEndpoint) continue;
       // A 4xx other than 429 means the request itself is wrong; another mirror won't help.
       if (err instanceof UpstreamError && err.status && err.status < 500 && err.status !== 429) throw err;
+      const failures = (breakers.get(base)?.failures ?? 0) + 1;
+      breakers.set(base, { failures, until: now() + Math.min(MAX_COOL_DOWN_MS, COOL_DOWN_MS * 2 ** (failures - 1)) });
     }
   }
-  throw lastError;
+  throw lastError instanceof SkipEndpoint ? new UpstreamError(lastError.message, "upstream", 504) : lastError;
 }
 
 /** Expired entries stay this long so they can be served when every upstream is down. */
