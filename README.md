@@ -2,13 +2,18 @@
 
 SafeNav is a mobile-first web app (installable PWA) for getting around Indian cities safely. It:
 
-- **Finds the safest walking route.** Every 100 m of a route is scored from real OpenStreetMap data: street lighting, footpaths, shops that are actually open at the hour you'll pass, isolated land such as industrial estates and parks at night, and distance to police stations and hospitals. It also uses community reports and the real sun position at your location.
+- **Finds the safest walking route.** Every 100 m of a route is scored from real OpenStreetMap data: street lighting, footpaths, shops that are actually open at the hour you'll pass, isolated land such as industrial estates and parks at night, back lanes, and distance to police stations and hospitals. It also uses community reports, the real sun position at your location and the **weather forecast for the hour you travel** (rain empties streets, fog dims lighting, downpours flood underpasses).
+- **Step-free routes** for wheelchair users, older people, and anyone with a walker or stroller. Steps, unpaved and rough surfaces, and ways mapped as inaccessible are avoided, using a dedicated wheelchair routing profile.
+- **Voice turn-by-turn directions**, so your phone can stay in a pocket or bag. If you leave the route, **"Find a safe route from here"** re-plans with full safety scoring and updates your contacts' live view.
 - **Shares journeys live.** Trusted contacts get a link that shows your position, route, battery and status. No app or account is needed to view it.
 - **Monitors cab and auto rides.** It records the number plate, then watches for detours, long unexplained stops and late arrival.
 - **Checks in, then escalates.** If you leave the route, stop for too long or run late, it asks "Are you OK?". If you don't answer within 60 seconds, it raises an SOS automatically.
 - **Sends SOS that works offline.** One hold opens a ready-to-send SMS to all contacts with your coordinates and live link. SMS needs no mobile data. There's also WhatsApp, one-tap 112, a loud alarm, and an optional automatic SMS gateway (Twilio or MSG91).
 - **Takes crowdsourced reports.** Harassment, snatching, poor lighting, stray dogs and more. Reports fade over time, gain weight when others confirm them, and are hidden when flagged.
-- **Shows nearby help and emergency numbers.** The nearest police stations, hospitals and 24-hour pharmacies, plus India's emergency numbers (112, 1091, 181, 108, 1098, 1930).
+- **Shake to SOS** (opt-in): shaking the phone hard starts a 5-second cancellable SOS countdown.
+- **Fake incoming call** with a ringtone, vibration and a voice on the line, for leaving an uncomfortable situation.
+- **Shows nearby help and emergency numbers.** The nearest police stations, hospitals and 24-hour pharmacies, each with a one-tap safe route, plus India's emergency numbers (112, 1091, 181, 108, 1098, 1930).
+- **Web, PWA and native app.** One codebase runs in any browser, installs as a PWA, and ships as an Android/iOS app ([docs/NATIVE_APP.md](docs/NATIVE_APP.md)) that keeps tracking with the screen locked.
 
 ## Why a PWA
 
@@ -20,17 +25,18 @@ SafeNav is a mobile-first web app (installable PWA) for getting around Indian ci
 | Guardians without the app | The live link is an ordinary web page |
 | Low cost | Only free, open data services; automatic SMS is optional |
 
-Known limit: browsers pause location when the screen is locked or the app is in the background, so the journey screen keeps the display on. A native wrapper (Capacitor or Expo) would be the next step for background tracking and hardware SOS triggers. The engine in `src/lib` has no browser dependencies and can be reused there.
+Known limit: browsers pause location when the screen is locked or the app is in the background, so the journey screen keeps the display on. The native Android/iOS app (Capacitor, in `android/` and `ios/`) removes this limit with background GPS. See [docs/NATIVE_APP.md](docs/NATIVE_APP.md).
 
 ## Data sources (all real, all free)
 
 | Data | Service | Used for |
 | --- | --- | --- |
 | Roads, lights, footpaths, shops, opening hours, land use, police, hospitals, transit, CCTV | OpenStreetMap via [Overpass API](https://overpass-api.de) | Safety factors |
-| Walking and driving routes with alternatives | [OSRM](https://project-osrm.org) on routing.openstreetmap.de | Routes and turn-by-turn steps |
+| Walking and driving routes with alternatives | [OSRM](https://project-osrm.org) on routing.openstreetmap.de (car also on router.project-osrm.org) | Routes and turn-by-turn steps |
+| Fallback and wheelchair routing | [Valhalla](https://valhalla.github.io/valhalla/) on valhalla1.openstreetmap.de | When OSRM is down; step-free routes |
 | Place search (autocomplete) | [Photon](https://photon.komoot.io) | Search box |
 | Reverse geocoding | [Nominatim](https://nominatim.org) | Place names |
-| Current rain | [Open-Meteo](https://open-meteo.com) | Fewer people outdoors in rain |
+| Hourly forecast: rain, thunderstorms, visibility | [Open-Meteo](https://open-meteo.com) | Fewer people out in rain, fog dims lighting, flooded underpasses |
 | Sunrise, sunset, twilight | [SunCalc](https://github.com/mourner/suncalc) (computed locally) | Day/night weighting |
 | Opening hours evaluation | [opening_hours.js](https://github.com/opening-hours/opening_hours.js) | Whether a shop is open when you pass |
 | Map tiles | [OpenFreeMap](https://openfreemap.org) | Base map |
@@ -65,6 +71,8 @@ The database schema is created automatically on first use (`data/safenav.db`). L
 | `E2E_BASE_URL=http://localhost:3000 npm test` | Also runs the end-to-end API tests against a running server |
 | `npm run lint` / `npm run typecheck` | ESLint and TypeScript |
 | `npm run icons` | Regenerates PWA icons from the SVG |
+| `npm run smoke:live` | Live checks against the real public data services |
+| `npm run cap:sync` / `cap:android` / `cap:ios` | Sync and open the native app projects |
 
 ## Deployment
 
@@ -77,6 +85,27 @@ The database schema is created automatically on first use (`data/safenav.db`). L
 **Any Node host or VPS:** run `npm run build && npm start` with `DATABASE_URL=file:/path/to/safenav.db` on a persistent disk.
 
 For real traffic, self-host OSRM and Overpass (both are open source with Docker images) and point `OSRM_FOOT_URL`, `OSRM_CAR_URL` and `OVERPASS_URL` at them. The public community servers are meant for light use.
+
+### Reliability
+
+The public data services rate-limit and go down independently, so every call is built to degrade instead of failing:
+
+- **Mirrors:** each routing and Overpass variable takes a comma-separated list, tried in order. The built-in defaults already include three Overpass mirrors and two car-routing servers.
+- **Second engine:** if every OSRM server fails, routes come from Valhalla.
+- **Truncated data rejected:** Overpass reports timeouts as HTTP 200 with partial data. These responses are rejected and never cached, so routes are never silently scored on empty data.
+- **Stale cache:** expired cache entries are kept for 7 days and served when every upstream is down.
+- **Directions always returned:** if street data is unavailable, you still get routes and turn-by-turn directions, clearly marked as unscored.
+- **Bounded time:** routing and street data each have a time budget, so a plan request finishes within the function limit.
+- **`GET /api/health`** probes every upstream and the database: 200 if safe routing works, 503 if not. Point an uptime monitor at it. `?deep=0` checks only the database.
+
+### Testing against live data
+
+```bash
+npm run build && npm start &
+npm run smoke:live                        # or: npm run smoke:live -- https://your-domain
+```
+
+`scripts/smoke-live.mjs` first prints the health of every upstream. It then plans real walks in Delhi, Mumbai, Bengaluru, Indore and Kolkata, by day and at night, plus one step-free walk. It checks that routes are scored, ranked, explained and timed correctly, and exits non-zero on any failure.
 
 ### Automatic SOS SMS (optional)
 
@@ -91,25 +120,29 @@ In India, application-to-person SMS needs **DLT registration** (TRAI rules): reg
 
 ```
 src/
-  app/                 Pages (plan, journey, report, contacts, help, about, account, live viewer /t/[token])
-    api/               Route handlers (auth, contacts, reports, routes/plan, trips, sos, share, places, geocode)
+  app/                 Pages (plan, journey, report, contacts, help, fake-call, about, account, live viewer /t/[token])
+    api/               Route handlers (auth, contacts, reports, routes/plan, trips + reroute, sos, share, places, geocode, health)
   components/          Map, SOS system, route cards, search, navigation
   lib/
     safety/            Scoring engine (score.ts), route planning (plan.ts)
-    providers/         OSRM, Overpass, Photon/Nominatim, Open-Meteo clients with a shared DB cache
+    providers/         OSRM, Valhalla, Overpass, Photon/Nominatim, Open-Meteo clients with failover and a shared DB cache
+    client/            Browser hooks: GPS (native background GPS in the app), voice guidance, shake detection
     monitor.ts         Off-route / stopped / overdue rules for live journeys
     sos.ts             SOS text, SMS and WhatsApp links, emergency numbers
     db/                Drizzle schema and migrations
     server/            Auth, validation, SMS gateways, HTTP helpers
-tests/                 Unit tests and end-to-end API tests
+tests/                 Unit, planner integration (simulated outages) and end-to-end API tests
 docs/SAFETY_MODEL.md   Scoring model, factors, weights and limitations
+docs/NATIVE_APP.md     Building and publishing the Android/iOS app
+android/, ios/         Capacitor native projects
+scripts/smoke-live.mjs Live checks against the real data services
 ```
 
 ## Privacy and safety notes
 
 - Live links use 128-bit random tokens, and only a SHA-256 hash is stored. They stop working 2 hours after a trip ends.
 - Reports never reveal who filed them, and you can't vote on your own report.
-- Location is sent only during a journey or an active SOS.
+- Location is sent only during a journey or an active SOS. Device preferences (step-free, voice, shake to SOS) stay on the phone.
 - A safety score is guidance, not a guarantee. In an emergency, call **112**.
 
 ## License and attribution

@@ -11,14 +11,14 @@ SafeNav measures the parameters that open data can support. "Gender usage" and "
 
 ## Pipeline
 
-1. **Candidates.** OSRM foot routing with `alternatives=3`. For walks longer than 400 m with fewer than three alternatives, extra candidates are routed through via-points offset 22% of the trip distance (150–1500 m) to each side of the straight line. Near-duplicates (85%+ overlap within 25 m) and routes more than 1.6× slower than the fastest are dropped.
+1. **Candidates.** OSRM foot routing with `alternatives=3` (Valhalla if every OSRM server fails). Step-free plans also request a Valhalla route with the wheelchair pedestrian profile, which avoids steps. For walks longer than 400 m with fewer than three alternatives, extra candidates are routed through via-points offset 22% of the trip distance (150–1500 m) to each side of the straight line. Near-duplicates (85%+ overlap within 25 m) and routes more than 1.6× slower than the fastest are dropped.
 2. **Data.** One Overpass request fetches, for all candidates:
    - roads within 25 m;
    - street lamps (40 m), CCTV (50 m) and footfall places (60 m);
    - transit (150 m), police (1.5 km) and hospitals (1 km);
    - isolating land use touching the route (20 m).
 
-   Community reports come from the database. Rain comes from Open-Meteo.
+   Community reports come from the database. Weather comes from Open-Meteo's hourly forecast for the hour at the middle of the walk, so a walk planned for later uses that hour's forecast.
 3. **Sampling.** The route is sampled every 20 m and grouped into 100 m segments. Each sample is matched to the nearest mapped road within 20 m, or 35 m as a fallback.
 4. **Timing.** Each segment is evaluated at its own ETA (departure plus distance-proportional travel time), so a shop that closes while you walk counts as closed. The light period (day, twilight, night or late night) comes from the sun position at the route midpoint.
 
@@ -26,9 +26,9 @@ SafeNav measures the parameters that open data can support. "Gender usage" and "
 
 | Factor | Inputs | Rules |
 | --- | --- | --- |
-| Lighting | `lit=*`, `highway=street_lamp` | lit=yes → 100; limited → 60; lit=no → 10 (55 with a lamp nearby). Untagged: 2+ lamps → 90, 1 lamp → 75, otherwise a prior by road class (main road 70, tertiary 60, residential 45, service 35, footway/path 35, track 10). |
+| Lighting | `lit=*`, `highway=street_lamp`, forecast visibility | lit=yes → 100; limited → 60; lit=no → 10 (55 with a lamp nearby). Untagged: 2+ lamps → 90, 1 lamp → 75, otherwise a prior by road class (main road 70, tertiary 60, residential 45, service 35, footway/path 35, track 10). ×0.8 in fog (visibility < 1 km) outside daylight. |
 | People & open shops | shops, eateries, pharmacies, fuel, banks, venues, places of worship, hospitals, transit | Each place is weighted by kind × probability it is open at the ETA. `opening_hours` is parsed when present; otherwise typical Indian hours apply (e.g. shops 0.75 from 9:00–20:00, 0.03 after 23:00). Score = 100·(1−e^(−x/2)), where x is the weighted open count per 100 m. After dark: +8 on main roads (passing traffic), ×0.7 when raining. |
-| Footpath & road type | `highway`, `sidewalk*`, `tunnel` | Footway/pedestrian 90; main road with sidewalk 85, without 25, unknown 35–60 by class; residential 70; track 25–40; pedestrian underpass 30 at night. |
+| Footpath & road type | `highway`, `sidewalk*`, `tunnel`, `service`, `surface`, `smoothness`, `wheelchair` | Footway/pedestrian 90; main road with sidewalk 85, without 25, unknown 35–60 by class; residential 70; back lane (`service=alley`) 40 after dark; track 25–40; pedestrian underpass 30 at night, 20 in heavy rain (flooding). Step-free: steps 5, `wheelchair=no` 15, unpaved ≤ 30, rough ≤ 35, `wheelchair=yes` ≥ 85. |
 | Openness | `landuse`, `leisure`, `natural`, `amenity=grave_yard` | Penalty (night / day): industrial 70/35, cemetery 75/30, woods/scrub 75/45, park 55/10, waste land 65/35, construction 65/35, railway 50/25, military 40/20. Twilight uses the midpoint. |
 | Help nearby | police, open hospitals / fuel / 24h pharmacies, CCTV | Police: ≤300 m → 100, falling linearly to 20 at 2 km. Safe haven: ≤200 m → 100, falling to 30 at 1 km. The higher of police and 0.85 × haven counts; +10 if CCTV is mapped. |
 | Public transport | bus stops, stations | ≤100 m 100, ≤250 m 75, ≤500 m 55, else 40. |
@@ -65,6 +65,17 @@ Reports older than 365 days are ignored. Reports flagged 3+ times, and more ofte
 - **Bands:** ≥70 "Safer", 50–69 "Use caution", <50 "Avoid if possible".
 - **Weak stretches:** consecutive segments scoring below 50 and at least 80 m long, with their most common reasons.
 - **Recommendation:** the safest route, unless it is less than 5 points safer than the fastest *and* more than 25% slower.
+- **Step-free:** routes using mapped steps are only recommended when no step-free route exists, and are listed after the step-free ones.
+
+## Weather (Open-Meteo hourly forecast)
+
+| Condition | Rule | Effect |
+| --- | --- | --- |
+| Rain | WMO drizzle/rain/shower/storm code, or ≥ 0.5 mm/h | People & open shops ×0.7 outside daylight |
+| Heavy rain | ≥ 4 mm/h, heavy rain/shower code, or thunderstorm | Pedestrian underpasses score 20 ("may be waterlogged") |
+| Fog | Visibility < 1 km, or fog code 45/48 | Lighting ×0.8 outside daylight |
+
+If the forecast is unavailable, routes are scored without weather. The plan never fails because of it.
 
 ## Data confidence
 
@@ -93,3 +104,5 @@ Fixes with accuracy worse than 150 m are ignored. Answering "I'm OK" mutes that 
 - There is no street-level crime data for India. If a city publishes geocoded data, it can be added as another factor.
 - Priors and weights are expert-set. They should be calibrated against Safetipin audit data or user feedback where available.
 - One Overpass call per plan. Very long walks (>15 km) are not scored.
+- OpenStreetMap rarely maps kerbs, ramps or broken pavements, so step-free results are only as good as local mapping.
+- If no street data is available after all mirrors and the stale cache, routes are returned unscored with a note, rather than not at all.
