@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { BottomNav } from "@/components/Nav";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorker";
+import { SafetyTimerWatch } from "@/components/SafetyTimer";
 import { SosButton, SosProvider } from "@/components/Sos";
 import { SessionProvider } from "@/lib/client/hooks";
 
@@ -29,6 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <SosProvider>
             {children}
             <SosButton />
+            <SafetyTimerWatch />
             <BottomNav />
           </SosProvider>
         </SessionProvider>

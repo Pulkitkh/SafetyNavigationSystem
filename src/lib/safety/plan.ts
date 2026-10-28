@@ -83,8 +83,8 @@ async function candidateRoutes(from: LngLat, to: LngLat, mode: TravelMode, opts:
   return dedupeRoutes(all.filter((r) => r.duration <= fastest * MAX_DETOUR_RATIO)).slice(0, MAX_CANDIDATES);
 }
 
-async function loadReports(routes: LngLat[][]): Promise<CommunityReport[]> {
-  const box = bboxOf(routes.flat(), 100);
+export async function loadReports(routes: LngLat[][], padM = 100): Promise<CommunityReport[]> {
+  const box = bboxOf(routes.flat(), padM);
   const db = await getDb();
   const rows = await db
     .select()

@@ -18,6 +18,7 @@
 import OpeningHours from "opening_hours";
 import {
   GridIndex,
+  distanceToBBox,
   haversine,
   inBBox,
   bboxOf,
@@ -36,10 +37,10 @@ import { FACTORS, type Factor } from "./factors";
 export { FACTORS, FACTOR_LABELS, type Factor } from "./factors";
 
 export const WEIGHTS: Record<LightPeriod, Record<Factor, number>> = {
-  day: { lighting: 0, activity: 0.2, walkpath: 0.25, isolation: 0.12, help: 0.1, transit: 0.06, community: 0.27 },
-  twilight: { lighting: 0.15, activity: 0.2, walkpath: 0.17, isolation: 0.13, help: 0.09, transit: 0.06, community: 0.2 },
-  night: { lighting: 0.24, activity: 0.2, walkpath: 0.1, isolation: 0.14, help: 0.09, transit: 0.05, community: 0.18 },
-  late_night: { lighting: 0.24, activity: 0.24, walkpath: 0.06, isolation: 0.15, help: 0.1, transit: 0.03, community: 0.18 },
+  day: { lighting: 0, activity: 0.18, frontage: 0.07, walkpath: 0.23, isolation: 0.11, help: 0.1, transit: 0.06, community: 0.25 },
+  twilight: { lighting: 0.14, activity: 0.18, frontage: 0.07, walkpath: 0.16, isolation: 0.12, help: 0.09, transit: 0.06, community: 0.18 },
+  night: { lighting: 0.22, activity: 0.18, frontage: 0.08, walkpath: 0.09, isolation: 0.13, help: 0.09, transit: 0.05, community: 0.16 },
+  late_night: { lighting: 0.22, activity: 0.22, frontage: 0.08, walkpath: 0.05, isolation: 0.14, help: 0.1, transit: 0.03, community: 0.16 },
 };
 
 const SAMPLE_STEP_M = 20;
@@ -119,6 +120,8 @@ export class FeatureIndex {
   readonly roads = new GridIndex<RoadSegmentRef>(60);
   readonly pois = new GridIndex<Poi>(120);
   readonly reports = new GridIndex<CommunityReport>(120);
+  readonly buildings = new GridIndex<BBox>(60);
+  readonly buildingCount: number;
   readonly areas: { area: Area; bbox: BBox }[];
   private readonly ohCache = new Map<string, OpeningHours | null>();
 
@@ -137,6 +140,18 @@ export class FeatureIndex {
     }
     for (const poi of features.pois) this.pois.insert(poi.point, poi);
     for (const r of reports) this.reports.insert(r.point, r);
+    // Index each footprint at its corners and centre so large blocks are found from any side.
+    for (const b of features.buildings ?? []) {
+      const pts: LngLat[] = [
+        [(b.minLng + b.maxLng) / 2, (b.minLat + b.maxLat) / 2],
+        [b.minLng, b.minLat],
+        [b.minLng, b.maxLat],
+        [b.maxLng, b.minLat],
+        [b.maxLng, b.maxLat],
+      ];
+      for (const p of pts) this.buildings.insert(p, b);
+    }
+    this.buildingCount = features.buildings?.length ?? 0;
     this.areas = features.areas.map((area) => ({ area, bbox: bboxOf(area.ring) }));
   }
 
@@ -253,10 +268,12 @@ function baseWalkpath(tags: Record<string, string> | undefined, dark: boolean, o
   const isMajor = MAJOR.has(hw) || hw === "tertiary" || hw === "tertiary_link";
   if (isMajor) {
     const sw = hasSidewalk(tags);
+    // Walking beside fast, wide traffic with no footpath is the most dangerous case.
+    const fast = Number.parseInt(tags.maxspeed ?? "", 10) >= 60 || Number.parseInt(tags.lanes ?? "", 10) >= 4;
     if (sw === true) return { score: 85, known: true };
-    if (sw === false) return { score: 25, known: true, reason: "No footpath along a busy road" };
+    if (sw === false) return fast ? { score: 15, known: true, reason: "Fast, wide road without a footpath" } : { score: 25, known: true, reason: "No footpath along a busy road" };
     const prior = hw.startsWith("trunk") ? 35 : hw.startsWith("primary") ? 50 : hw.startsWith("secondary") ? 55 : 60;
-    return { score: prior, known: false };
+    return { score: fast ? prior - 10 : prior, known: false };
   }
   // Narrow back lanes have little natural surveillance after dark (CPTED).
   if (hw === "service" && tags.service === "alley" && dark) return { score: 40, known: true, reason: "Narrow back lane" };
@@ -264,7 +281,7 @@ function baseWalkpath(tags: Record<string, string> | undefined, dark: boolean, o
   return { score: 55, known: false };
 }
 
-const AREA_PENALTY: Record<AreaKind, { dark: number; light: number; label: string }> = {
+export const AREA_PENALTY: Record<AreaKind, { dark: number; light: number; label: string }> = {
   industrial: { dark: 70, light: 35, label: "an industrial area" },
   cemetery: { dark: 75, light: 30, label: "a cemetery" },
   woods: { dark: 75, light: 45, label: "wooded or scrub land" },
@@ -289,7 +306,7 @@ export function isolationScore(kinds: AreaKind[], period: LightPeriod): { score:
   return { score: 100 - penalty, worst };
 }
 
-const ACTIVITY_WEIGHT: Partial<Record<PoiKind, number>> = {
+export const ACTIVITY_WEIGHT: Partial<Record<PoiKind, number>> = {
   shop: 1,
   food: 1.2,
   venue: 1.5,
@@ -311,6 +328,7 @@ export function defaultOpenProbability(kind: PoiKind, hour: number): number {
   switch (kind) {
     case "hospital":
     case "atm":
+    case "police": // police stations in India are staffed round the clock
       return 1;
     case "transit":
       // City buses and metros mostly stop around 23:00 and restart near 05:30,
@@ -362,6 +380,20 @@ export function helpScore(policeM: number | null, havenM: number | null, cctv: n
   return Math.round(Math.min(100, Math.max(police, 0.85 * haven) + (cctv > 0 ? 10 : 0)));
 }
 
+/**
+ * Natural surveillance from buildings facing the street (CPTED): homes and shops
+ * mean windows, doors and people who can see and hear. `share` is the fraction
+ * of the street with a building footprint within 25 m.
+ */
+export function frontageScore(share: number): number {
+  return Math.round(15 + 85 * Math.min(1, Math.max(0, share)));
+}
+
+export const FRONTAGE_M = 25;
+
+/** Below this many mapped buildings per km, building data is treated as missing rather than as empty land. */
+export const MIN_BUILDINGS_PER_KM = 3;
+
 export function transitScore(distanceM: number | null): number {
   if (distanceM == null) return 40;
   if (distanceM <= 100) return 100;
@@ -397,7 +429,7 @@ export function communityScore(totalWeight: number): number {
 // Route scoring
 // ---------------------------------------------------------------------------
 
-const HAVEN_KINDS = new Set<PoiKind>(["hospital", "fuel", "pharmacy"]);
+export const HAVEN_KINDS = new Set<PoiKind>(["hospital", "fuel", "pharmacy"]);
 
 interface SampleFacts {
   sample: Sample;
@@ -461,6 +493,21 @@ export function scoreRoute(
   const reportsSeen = new Set<string>();
   const openSeen = new Set<string>();
 
+  // Building data is patchy in places: with almost none mapped along the route,
+  // treat frontage as unknown (neutral) rather than as empty land.
+  const buildingsNear = new Set<BBox>();
+  let checked = 0;
+  let alongside = 0;
+  for (let i = 0; i < samples.length; i += 3) {
+    const near = index.buildings.near(samples[i].point, 150);
+    near.forEach(({ item }) => buildingsNear.add(item));
+    checked++;
+    if (near.some(({ item }) => distanceToBBox(samples[i].point, item) <= FRONTAGE_M)) alongside++;
+  }
+  // Mapped if buildings are reasonably dense, or a few large ones (a mall, a colonnade) line much of the way.
+  const buildingsMapped =
+    total > 0 && (buildingsNear.size / Math.max(0.2, total / 1000) >= MIN_BUILDINGS_PER_KM || (checked > 0 && alongside / checked >= 0.2));
+
   const segments: ScoredSegment[] = [];
   for (const group of groups) {
     if (!group?.length) continue;
@@ -474,6 +521,7 @@ export function scoreRoute(
     const nearby = new Map<string, Poi>();
     const cctvHere = new Set<string>();
     const reportsHere = new Map<string, CommunityReport>();
+    let frontageSamples = 0;
     let transitM: number | null = null;
     for (const f of group) {
       for (const { item, distance } of index.pois.near(f.sample.point, 150)) {
@@ -482,6 +530,7 @@ export function scoreRoute(
         if (distance <= 60 && ACTIVITY_WEIGHT[item.kind] != null) nearby.set(item.id, item);
       }
       for (const { item } of index.reports.near(f.sample.point, 60)) reportsHere.set(item.id, item);
+      if (index.buildings.near(f.sample.point, 150).some(({ item }) => distanceToBBox(f.sample.point, item) <= FRONTAGE_M)) frontageSamples++;
     }
     let weightedOpen = 0;
     for (const poi of nearby.values()) {
@@ -528,6 +577,7 @@ export function scoreRoute(
     const factors: Record<Factor, number> = {
       lighting: Math.round(mean(group.map((f) => f.light.score))),
       activity,
+      frontage: buildingsMapped ? frontageScore(frontageSamples / group.length) : 50,
       walkpath: Math.round(mean(group.map((f) => f.walk.score))),
       isolation: Math.round(mean(group.map((f) => f.isolation.score))),
       help: helpScore(policeM, havenM, cctvHere.size),
@@ -544,6 +594,7 @@ export function scoreRoute(
       reasons.push(ctx.foggy ? "Dim in fog" : known ? "Poorly lit stretch" : "Street lighting not mapped here");
     }
     if (factors.activity < 35) reasons.push(dark ? "Few open shops or people at this hour" : "Few shops or people around");
+    if (buildingsMapped && factors.frontage < 35) reasons.push("Few buildings facing the street");
     const walkReason = group.find((f) => f.walk.reason)?.walk.reason;
     if ((factors.walkpath < 50 || (ctx.stepFree && walkReason)) && walkReason) reasons.push(walkReason);
     const worstArea = group.find((f) => f.isolation.worst)?.isolation.worst;
@@ -597,6 +648,7 @@ export function scoreRoute(
     coverageParts.push(ohKnown / ohTotal);
     if (ohKnown / ohTotal < 0.3) notes.push("Few places list opening hours; open/closed is estimated from typical hours.");
   }
+  if (!buildingsMapped) notes.push("Buildings are barely mapped along this route, so frontage is not judged.");
   const coverage = coverageParts.reduce((a, b) => a + b, 0) / coverageParts.length;
 
   const highlights: string[] = [];
@@ -604,6 +656,7 @@ export function scoreRoute(
   if (footpathShare >= 0.5) highlights.push(`Footpath or pedestrian way for ${Math.round(footpathShare * 100)}% of the walk`);
   if (openPoiTotal >= 5) highlights.push(`${openPoiTotal} shops and places likely open along the way`);
   if (nearestPolice != null && nearestPolice <= 500) highlights.push(`Police station ${Math.round(nearestPolice)} m from the route`);
+  if (buildingsMapped && factorAvg.frontage >= 75) highlights.push("Homes and shops line most of the way");
   if (cctvSeen.size) highlights.push(`${cctvSeen.size} mapped CCTV camera${cctvSeen.size > 1 ? "s" : ""}`);
 
   return {

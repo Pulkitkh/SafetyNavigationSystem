@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { destinationPoint, resample, type LngLat } from "@/lib/geo";
 import { describeStep } from "@/lib/providers/osrm";
-import { buildRouteQuery, classifyArea, classifyPoi, parseOverpass, queryLine } from "@/lib/providers/overpass";
+import { assembleRings, buildAreaQuery, buildRouteQuery, classifyArea, classifyPoi, parseOverpass, queryLine } from "@/lib/providers/overpass";
 import { dedupeRoutes, rankRoutes, viaPoints, type PlannedRoute } from "@/lib/safety/plan";
 import type { RawRoute } from "@/lib/providers/osrm";
 
@@ -40,12 +40,41 @@ describe("Overpass", () => {
         geometry: [{ lat: 0, lon: 0 }, { lat: 0, lon: 1 }, { lat: 1, lon: 1 }, { lat: 0, lon: 0 }],
       },
       { type: "node", id: 2, lat: 1, lon: 1, tags: { amenity: "cafe" } },
+      { type: "way", id: 9, bounds: { minlat: 1.0002, minlon: 1.0001, maxlat: 1.0003, maxlon: 1.0002 } },
+      { type: "way", id: 3, bounds: { minlat: 1.0004, minlon: 1.0004, maxlat: 1.0005, maxlon: 1.0005 } },
+    ]);
+    // Tagless bounds are buildings; a building that is also a shop is kept in both lists.
+    expect(f.buildings).toEqual([
+      { minLng: 1.0001, minLat: 1.0002, maxLng: 1.0002, maxLat: 1.0003 },
+      { minLng: 1.0004, minLat: 1.0004, maxLng: 1.0005, maxLat: 1.0005 },
     ]);
     expect(f.roads).toHaveLength(1);
     expect(f.roads[0].tags).toEqual({ highway: "primary", lit: "yes" });
     expect(f.pois.map((p) => p.kind).sort()).toEqual(["food", "shop"]);
     expect(f.pois.find((p) => p.kind === "food")).toMatchObject({ name: "Chai Point", openingHours: "Mo-Su 08:00-22:00" });
     expect(f.areas).toHaveLength(1);
+  });
+
+  it("joins multipolygon relation members into rings", () => {
+    const g = (pts: [number, number][]) => pts.map(([lon, lat]) => ({ lat, lon }));
+    const rings = assembleRings([
+      { type: "way", ref: 1, role: "outer", geometry: g([[0, 0], [1, 0], [1, 1]]) },
+      // The second half is stored in the opposite direction.
+      { type: "way", ref: 2, role: "outer", geometry: g([[0, 0], [0, 1], [1, 1]]) },
+      { type: "way", ref: 3, role: "inner", geometry: g([[0.2, 0.2], [0.3, 0.2], [0.3, 0.3], [0.2, 0.2]]) },
+      { type: "way", ref: 4, role: "outer", geometry: g([[5, 5], [6, 5], [6, 6], [5, 5]]) },
+    ]);
+    expect(rings).toHaveLength(2);
+    expect(rings[0]).toHaveLength(5);
+    const f = parseOverpass([{ type: "relation", id: 7, tags: { type: "multipolygon", landuse: "industrial" }, members: [{ type: "way", ref: 4, role: "outer", geometry: g([[5, 5], [6, 5], [6, 6], [5, 5]]) }] }]);
+    expect(f.areas.map((a) => a.kind)).toEqual(["industrial"]);
+  });
+
+  it("asks for relations and excludes empty-at-night building types", () => {
+    const q = buildAreaQuery([77.2, 28.6]);
+    expect(q).toContain("rel(around:60");
+    expect(q).toContain('building!~"^(industrial|warehouse');
+    expect(buildRouteQuery([[[77.2, 28.6], [77.21, 28.61]]])).toContain("[type=multipolygon]");
   });
 
   it("builds a bounded query for long routes", () => {
@@ -56,6 +85,8 @@ describe("Overpass", () => {
     expect(q).toContain("[out:json]");
     expect(q).toContain("highway=street_lamp");
     expect(q).toContain("amenity=police");
+    expect(q).toContain("[building]");
+    expect(q).toContain("out ids bb qt");
   });
 });
 

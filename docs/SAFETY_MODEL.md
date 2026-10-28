@@ -27,8 +27,9 @@ SafeNav measures the parameters that open data can support. "Gender usage" and "
 | Factor | Inputs | Rules |
 | --- | --- | --- |
 | Lighting | `lit=*`, `highway=street_lamp`, forecast visibility | lit=yes → 100; limited → 60; lit=no → 10 (55 with a lamp nearby). Untagged: 2+ lamps → 90, 1 lamp → 75, otherwise a prior by road class (main road 70, tertiary 60, residential 45, service 35, footway/path 35, track 10). ×0.8 in fog (visibility < 1 km) outside daylight. |
+| Homes & shops facing the street | building footprints (`out ids bb`), excluding factories, warehouses, sheds and garages | Share of the street with a building within 25 m → 15 + 85 × share. With fewer than 3 mapped buildings per km (and under 20% of the street lined), building data counts as missing: 50, and the UI says so. |
 | People & open shops | shops, eateries, pharmacies, fuel, banks, venues, places of worship, hospitals, transit | Each place is weighted by kind × probability it is open at the ETA. `opening_hours` is parsed when present; otherwise typical Indian hours apply (e.g. shops 0.75 from 9:00–20:00, 0.03 after 23:00; bus and metro stops 1 from 6:00–22:00, 0.6 until 23:00, then 0.1). Score = 100·(1−e^(−x/2)), where x is the weighted open count per 100 m. After dark: +8 on main roads (passing traffic), ×0.7 when raining. |
-| Footpath & road type | `highway`, `sidewalk*`, `tunnel`, `service`, `surface`, `smoothness`, `wheelchair` | Footway/pedestrian 90; main road with sidewalk 85, without 25, unknown 35–60 by class; residential 70; back lane (`service=alley`) 40 after dark; track 25–40; pedestrian underpass 30 at night, 20 in heavy rain (flooding). Step-free: steps 5, `wheelchair=no` 15, unpaved ≤ 30, rough ≤ 35, `wheelchair=yes` ≥ 85. |
+| Footpath & road type | `highway`, `sidewalk*`, `tunnel`, `service`, `surface`, `smoothness`, `wheelchair`, `lanes`, `maxspeed` | Footway/pedestrian 90; main road with sidewalk 85, without 25 (15 if 4+ lanes or ≥ 60 km/h; unknown footpath on such roads −10), unknown 35–60 by class; residential 70; back lane (`service=alley`) 40 after dark; track 25–40; pedestrian underpass 30 at night, 20 in heavy rain (flooding). Step-free: steps 5, `wheelchair=no` 15, unpaved ≤ 30, rough ≤ 35, `wheelchair=yes` ≥ 85. |
 | Openness | `landuse`, `leisure`, `natural`, `amenity=grave_yard` | Penalty (night / day): industrial 70/35, cemetery 75/30, woods/scrub 75/45, park 55/10, waste land 65/35, construction 65/35, railway 50/25, military 40/20. Twilight uses the midpoint. |
 | Help nearby | police, open hospitals / fuel / 24h pharmacies, CCTV | Police: ≤300 m → 100, falling linearly to 20 at 2 km. Safe haven: ≤200 m → 100, falling to 30 at 1 km. The higher of police and 0.85 × haven counts; +10 if CCTV is mapped. |
 | Public transport | bus stops, stations | ≤100 m 100, ≤250 m 75, ≤500 m 55, else 40. |
@@ -51,13 +52,14 @@ Reports older than 365 days are ignored. Reports flagged 3+ times, and more ofte
 
 | Factor | Day | Twilight | Night | Late night (23–05) |
 | --- | --- | --- | --- | --- |
-| Lighting | 0% | 15% | 24% | 24% |
-| People & open shops | 20% | 20% | 20% | 24% |
-| Footpath & road type | 25% | 17% | 10% | 6% |
-| Openness | 12% | 13% | 14% | 15% |
+| Lighting | 0% | 14% | 22% | 22% |
+| People & open shops | 18% | 18% | 18% | 22% |
+| Homes & shops facing the street | 7% | 7% | 8% | 8% |
+| Footpath & road type | 23% | 16% | 9% | 5% |
+| Openness | 11% | 12% | 13% | 14% |
 | Help nearby | 10% | 9% | 9% | 10% |
 | Public transport | 6% | 6% | 5% | 3% |
-| Community reports | 27% | 20% | 18% | 18% |
+| Community reports | 25% | 18% | 16% | 16% |
 
 ## Route score and ranking
 
@@ -98,6 +100,21 @@ The levels are High (≥60%), Medium (≥30%) and Low. Unknown data is never sco
 | Arrived | within 60 m of the destination | within 150 m |
 
 Fixes with accuracy worse than 150 m are ignored. Answering "I'm OK" mutes that rule for 5 minutes (10 for overdue). An unanswered check-in raises an SOS after 60 seconds if automatic SOS is on.
+
+## Area check ("Is it safe here?", `src/lib/safety/area.ts`)
+
+The same factors and weights, evaluated at the current moment for one point:
+
+- Streets within 150 m are sampled every 20 m for lighting, footpath and frontage.
+- Places within 200 m are counted. The circle holds about 10.5 of the 100 × 120 m strips a route segment covers, so the count is divided by that to keep both scores on one scale.
+- Police within 2 km, open havens within 1.5 km, community reports within 200 m.
+- The result also lists places open now, the nearest police station and the nearest open hospital, petrol pump or pharmacy, each with a safety-scored route.
+
+Police stations without published hours count as open round the clock, since stations in India are staffed 24 hours.
+
+## Land use from relations
+
+Industrial estates, cemeteries, parks, railway land and military areas are often mapped as multipolygon relations rather than single closed ways. Their outer members are joined into rings (`assembleRings`). Inner rings are ignored, which is conservative.
 
 ## Known limitations
 

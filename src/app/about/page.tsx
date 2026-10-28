@@ -1,3 +1,4 @@
+import { Info } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader } from "@/components/Nav";
@@ -9,6 +10,7 @@ export const metadata: Metadata = { title: "How it works" };
 const FACTOR_TEXT: Record<(typeof FACTORS)[number], string> = {
   lighting: "Street lighting mapped in OpenStreetMap (lit=* on roads and street-lamp points). Unmapped roads use a conservative estimate by road type.",
   activity: "Shops, eateries, pharmacies and fuel stations within 60 m, counted only if they are likely open when you pass, using their published opening hours.",
+  frontage: "Buildings mapped within 30 m of the street. Homes and shops facing the road mean windows, doors and people who can see and help; blank walls and empty plots don't.",
   walkpath: "Whether there is a footpath. Busy roads without a footpath, unpaved tracks and pedestrian underpasses at night score low.",
   isolation: "Passing industrial estates, cemeteries, vacant land, construction sites, railway corridors, woods or parks, which are deserted after dark.",
   help: "Distance to the nearest police station, plus open hospitals, fuel stations and 24-hour pharmacies where you could seek help. Mapped CCTV adds a little.",
@@ -26,12 +28,12 @@ const PERIODS = [
 export default function AboutPage() {
   return (
     <main className="mx-auto max-w-2xl pb-nav">
-      <PageHeader title="How SafeNav works" subtitle="Open data, transparent rules, no black box." />
+      <PageHeader title="How SafeNav works" subtitle="Open data, transparent rules, no black box." icon={<Info />} />
       <div className="space-y-6 px-4 text-sm leading-relaxed text-slate-700">
         <section>
           <h2 className="mb-1 text-base font-semibold text-slate-900">Route safety score</h2>
           <p>
-            Every walking route is split into 100 m stretches. Each stretch is rated on seven factors drawn from Safetipin&apos;s women&apos;s safety audit
+            Every walking route is split into 100 m stretches. Each stretch is rated on eight factors drawn from Safetipin&apos;s women&apos;s safety audit
             parameters, which Indian cities use, and from Crime Prevention Through Environmental Design. The route&apos;s score combines the average with
             its weakest 10%, because one dark, empty stretch matters more than an average suggests.
           </p>

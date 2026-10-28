@@ -25,7 +25,8 @@ interface SosState {
 
 interface SosApi {
   active: boolean;
-  trigger: (trigger?: Trigger) => void;
+  /** `note` adds context to the message, e.g. where the person said they would be. */
+  trigger: (trigger?: Trigger, note?: string) => void;
 }
 
 const SosContext = createContext<SosApi | null>(null);
@@ -52,7 +53,7 @@ export function SosProvider({ children }: { children: ReactNode }) {
   const geo = useGeolocation(!!sos);
 
   const trigger = useCallback(
-    (trigger: Trigger = "manual") => {
+    (trigger: Trigger = "manual", note?: string) => {
       if (sos) return;
       const journey = store.journey();
       const token = journey?.shareToken ?? newShareToken();
@@ -66,7 +67,7 @@ export function SosProvider({ children }: { children: ReactNode }) {
         lng: fix?.lng,
         accuracyM: fix?.accuracy,
         vehicle: journey?.vehicle,
-        reason: REASON[trigger],
+        reason: [REASON[trigger], note?.trim()].filter(Boolean).join(": ") || null,
       });
       if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 600]);
       const state: SosState = {

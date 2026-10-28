@@ -1,5 +1,6 @@
 "use client";
 
+import { Users } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/Nav";
@@ -27,7 +28,7 @@ export default function ContactsPage() {
   if (!me) {
     return (
       <main className="mx-auto max-w-lg pb-nav">
-        <PageHeader title="Trusted contacts" subtitle="The people alerted when you send SOS." />
+        <PageHeader title="Trusted contacts" subtitle="The people alerted when you send SOS." icon={<Users />} />
         <div className="mx-4 rounded-2xl bg-white p-4 text-sm text-slate-700">
           <Link href="/login?next=/contacts" className="font-medium text-brand-600">Sign in</Link> to save up to {MAX} trusted contacts. They&apos;re stored on
           your phone too, so SOS works without internet.
@@ -66,7 +67,7 @@ export default function ContactsPage() {
 
   return (
     <main className="mx-auto max-w-lg pb-nav">
-      <PageHeader title="Trusted contacts" subtitle={`Up to ${MAX} people who get your SOS and journey links.`} />
+      <PageHeader title="Trusted contacts" subtitle={`Up to ${MAX} people who get your SOS and journey links.`} icon={<Users />} />
       <div className="space-y-4 px-4">
         {welcome && contacts.length === 0 && (
           <p className="rounded-2xl bg-brand-50 p-4 text-sm text-brand-700">Welcome! Add at least one person you trust. SafeNav can only alert people you add here.</p>

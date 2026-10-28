@@ -16,7 +16,7 @@ export interface MapRoute {
 export interface MapMarker {
   id: string;
   point: LngLat;
-  kind: "weak" | "report" | "police" | "hospital" | "dest" | "start";
+  kind: "weak" | "report" | "police" | "hospital" | "dest" | "start" | "safe" | "place";
   label?: string;
 }
 
@@ -52,6 +52,8 @@ const MARKER_STYLE: Record<MapMarker["kind"], { bg: string; text: string }> = {
   hospital: { bg: "#be123c", text: "H" },
   dest: { bg: "#0f172a", text: "◎" },
   start: { bg: "#0f766e", text: "●" },
+  safe: { bg: "#15803d", text: "✓" },
+  place: { bg: "#64748b", text: "•" },
 };
 
 const emptyFC = (): GeoJSON.FeatureCollection => ({ type: "FeatureCollection", features: [] });
@@ -124,7 +126,7 @@ export default function MapView({
         source: "routes",
         filter: ["==", ["get", "selected"], true],
         layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": "#2563eb", "line-width": 6 },
+        paint: { "line-color": "#6d28d9", "line-width": 6 },
       });
       map.addLayer({
         id: "segments",
@@ -165,6 +167,8 @@ export default function MapView({
       setReady(true);
     };
     map.on("style.load", setup);
+    // Keep the attribution as a small (i) button rather than a panel covering the map.
+    map.once("load", () => container.current?.querySelector(".maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show"));
     map.on("click", (e) => {
       const hit = map.queryRenderedFeatures(e.point, { layers: ["routes-alt"] });
       if (!hit.length) handlers.current.onMapClick?.([e.lngLat.lng, e.lngLat.lat]);

@@ -1,17 +1,21 @@
 @import "tailwindcss";
 
 @theme {
-  --color-brand-50: #eef6ff;
-  --color-brand-100: #d9eaff;
-  --color-brand-500: #2563eb;
-  --color-brand-600: #1d4ed8;
-  --color-brand-700: #1e40af;
-  --color-sos: #dc2626;
-  --color-sos-dark: #b91c1c;
+  --color-brand-50: #f5f3ff;
+  --color-brand-100: #ede9fe;
+  --color-brand-200: #ddd6fe;
+  --color-brand-300: #c4b5fd;
+  --color-brand-500: #7c3aed;
+  --color-brand-600: #6d28d9;
+  --color-brand-700: #5b21b6;
+  --color-brand-800: #4c1d95;
+  --color-brand-900: #2e1065;
+  --color-sos: #e11d48;
+  --color-sos-dark: #be123c;
   --color-good: #15803d;
   --color-caution: #b45309;
   --color-avoid: #b91c1c;
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
 }
 
 :root {
@@ -20,7 +24,7 @@
 
 html,
 body {
-  background: #f8fafc;
+  background: #f6f5fb;
   color: #0f172a;
   -webkit-tap-highlight-color: transparent;
 }
@@ -66,4 +70,33 @@ body {
   .sos-pulse {
     animation: none;
   }
+}
+
+/* Shared surfaces */
+.card {
+  border-radius: 1.25rem;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 4px 16px -6px rgb(46 16 101 / 0.12);
+  outline: 1px solid rgb(15 23 42 / 0.05);
+}
+
+.brand-gradient {
+  background-image: linear-gradient(135deg, #6d28d9 0%, #4f46e5 55%, #2563eb 100%);
+}
+
+.sheet {
+  border-top-left-radius: 1.75rem;
+  border-top-right-radius: 1.75rem;
+  box-shadow: 0 -8px 30px -12px rgb(46 16 101 / 0.25);
+}
+
+@media (min-width: 768px) {
+  .sheet {
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
+.pick-mode .maplibregl-canvas {
+  cursor: crosshair;
 }

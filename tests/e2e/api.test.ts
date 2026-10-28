@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest";
 
 const BASE = process.env.E2E_BASE_URL;
 const run = BASE ? describe : describe.skip;
+/** Calls that reach the public data services can wait out their full failover budget. */
+const NETWORK_TIMEOUT = 120_000;
 
 class Client {
   cookie = "";
@@ -175,7 +177,7 @@ run("API end to end", () => {
     else expect(plan.body.routes.length).toBeGreaterThan(0);
     const same = await asha.call("/api/routes/plan", { method: "POST", json: { from: route[0], to: route[0] } });
     expect(same.status).toBe(400);
-  });
+  }, NETWORK_TIMEOUT);
 
   it("reports database and upstream health", async () => {
     const shallow = await new Client().call("/api/health?deep=0");
@@ -185,7 +187,33 @@ run("API end to end", () => {
     expect([200, 503]).toContain(deep.status);
     expect(deep.body.probes.length).toBeGreaterThan(5);
     expect(Object.keys(deep.body.services)).toContain("street data (Overpass)");
-  });
+  }, NETWORK_TIMEOUT);
+
+  it("resolves pasted coordinates, map links and plus codes in search", async () => {
+    const c = new Client();
+    for (const q of ["22.7186, 75.8546", "https://maps.google.com/?q=22.7186,75.8546", "7JJQPV93+CR"]) {
+      const r = await c.call(`/api/geocode/search?q=${encodeURIComponent(q)}`);
+      expect(r.status).toBe(200);
+      expect(r.body.places).toHaveLength(1);
+      expect(r.body.places[0].lat).toBeCloseTo(22.7186, 2);
+      expect(r.body.places[0].lng).toBeCloseTo(75.8546, 2);
+    }
+    const short = await c.call(`/api/geocode/search?q=${encodeURIComponent("PV93+CR")}`);
+    expect(short.status).toBe(422); // a short code needs a city or the user's location
+    expect(short.body.error).toMatch(/city/);
+    const nearby = await c.call(`/api/geocode/search?q=${encodeURIComponent("PV93+CR")}&lat=22.72&lng=75.86`);
+    expect(nearby.body.places[0].lat).toBeCloseTo(22.7186, 2);
+  }, NETWORK_TIMEOUT);
+
+  it("checks an area, degrading clearly when street data is unavailable", async () => {
+    const r = await new Client().call("/api/safety/area?lat=22.7186&lng=75.8546");
+    expect([200, 502]).toContain(r.status);
+    if (r.status === 200) {
+      expect(r.body.area.score).toBeGreaterThanOrEqual(0);
+      expect(r.body.area.factors).toHaveProperty("frontage");
+    } else expect(r.body.error).toMatch(/OpenStreetMap data/);
+    expect((await new Client().call("/api/safety/area?lat=abc")).status).toBe(400);
+  }, NETWORK_TIMEOUT);
 
   it("logs out", async () => {
     expect((await asha.call("/api/auth/logout", { method: "POST" })).status).toBe(200);

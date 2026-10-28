@@ -159,6 +159,12 @@ export function bboxOf(points: LngLat[], padM = 0): BBox {
   return { minLng: minLng - padLng, minLat: minLat - padLat, maxLng: maxLng + padLng, maxLat: maxLat + padLat };
 }
 
+/** Metres from `p` to the nearest edge of `b` (0 inside). */
+export function distanceToBBox(p: LngLat, b: BBox): number {
+  const clamped: LngLat = [Math.min(Math.max(p[0], b.minLng), b.maxLng), Math.min(Math.max(p[1], b.minLat), b.maxLat)];
+  return haversine(p, clamped);
+}
+
 export function inBBox(p: LngLat, b: BBox): boolean {
   return p[0] >= b.minLng && p[0] <= b.maxLng && p[1] >= b.minLat && p[1] <= b.maxLat;
 }

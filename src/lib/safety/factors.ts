@@ -1,12 +1,13 @@
 // Factor names and labels, kept separate from the scoring engine so the UI can
 // import them without bundling the engine.
 
-export type Factor = "lighting" | "activity" | "walkpath" | "isolation" | "help" | "transit" | "community";
-export const FACTORS: Factor[] = ["lighting", "activity", "walkpath", "isolation", "help", "transit", "community"];
+export type Factor = "lighting" | "activity" | "frontage" | "walkpath" | "isolation" | "help" | "transit" | "community";
+export const FACTORS: Factor[] = ["lighting", "activity", "frontage", "walkpath", "isolation", "help", "transit", "community"];
 
 export const FACTOR_LABELS: Record<Factor, string> = {
   lighting: "Street lighting",
   activity: "People & open shops",
+  frontage: "Homes & shops facing the street",
   walkpath: "Footpath & road type",
   isolation: "Openness of surroundings",
   help: "Help nearby",

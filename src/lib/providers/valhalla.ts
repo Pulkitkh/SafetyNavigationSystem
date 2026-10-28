@@ -94,6 +94,8 @@ export async function valhallaRoute(
       cached("valhalla", `${base}?${query}`, 6 * 3600_000, () =>
         fetchJson<ValhallaResponse>(`${base}/route?${query}`, { service: "routing", timeoutMs: 12_000, retries: 0 }),
       ),
+      Date.now,
+      "routing",
     );
     return [data.trip, ...(data.alternates ?? []).map((a) => a.trip)].filter((t) => t.status === 0).map(parseValhallaTrip);
   } catch (err) {

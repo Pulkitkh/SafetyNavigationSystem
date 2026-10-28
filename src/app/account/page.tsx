@@ -1,5 +1,6 @@
 "use client";
 
+import { UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -55,7 +56,7 @@ export default function AccountPage() {
 
   return (
     <main className="mx-auto max-w-lg pb-nav">
-      <PageHeader title="Account" subtitle={me.email} />
+      <PageHeader title="Account" subtitle={me.email} icon={<UserRound />} />
       <div className="space-y-4 px-4">
         <form
           onSubmit={(e) => {

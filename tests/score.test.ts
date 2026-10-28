@@ -8,6 +8,7 @@ import {
   defaultOpenProbability,
   FeatureIndex,
   findWeakStretches,
+  frontageScore,
   helpScore,
   lightingScore,
   openProbability,
@@ -60,6 +61,7 @@ describe("factor functions", () => {
     expect(defaultOpenProbability("shop", 11)).toBeGreaterThan(0.5);
     expect(defaultOpenProbability("shop", 23)).toBeLessThan(0.1);
     expect(defaultOpenProbability("hospital", 3)).toBe(1);
+    expect(defaultOpenProbability("police", 2)).toBe(1);
     // Transit stops bring people only while services run.
     expect(defaultOpenProbability("transit", 9)).toBe(1);
     expect(defaultOpenProbability("transit", 1)).toBeLessThan(0.2);
@@ -200,6 +202,61 @@ describe("conditions and accessibility", () => {
   });
 });
 
+describe("eyes on the street", () => {
+  const start: LngLat = [75.86, 22.72];
+  const line = [start, destinationPoint(start, 0, 500)];
+  const road = { id: "w", tags: { highway: "residential", lit: "yes" }, geometry: line };
+
+  it("maps the share of street with buildings alongside onto 0–100", () => {
+    expect(frontageScore(0)).toBe(15);
+    expect(frontageScore(0.5)).toBe(58);
+    expect(frontageScore(1)).toBe(100);
+  });
+
+  it("counts one large block along a street like a row of houses", () => {
+    // A single 400 m-long block 15 m from the street (a colonnade, a mall).
+    const sw = destinationPoint(line[0], 90, 15);
+    const ne = destinationPoint(destinationPoint(line[0], 0, 400), 90, 60);
+    const block = { minLng: sw[0], minLat: sw[1], maxLng: ne[0], maxLat: ne[1] };
+    const filler = resample(line, 100).map((s) => {
+      const c = destinationPoint(s.point, 270, 300);
+      return { minLng: c[0], minLat: c[1], maxLng: c[0] + 0.0001, maxLat: c[1] + 0.0001 };
+    });
+    const r = scoreRoute(line, 360, new FeatureIndex({ roads: [road], pois: [], areas: [], buildings: [block, ...filler] }, []), { departAt: NIGHT, tz: TZ });
+    expect(r.factors.frontage).toBeGreaterThan(75);
+  });
+
+  it("scores a street lined with homes above blank walls, and treats unmapped buildings as unknown", () => {
+    // 8 m houses every 10 m on both sides, 12 m from the centreline.
+    const box = (c: LngLat) => {
+      const sw = destinationPoint(destinationPoint(c, 180, 4), 270, 4);
+      const ne = destinationPoint(destinationPoint(c, 0, 4), 90, 4);
+      return { minLng: sw[0], minLat: sw[1], maxLng: ne[0], maxLat: ne[1] };
+    };
+    const houses = resample(line, 10).flatMap((s) => [box(destinationPoint(s.point, 90, 12)), box(destinationPoint(s.point, 270, 12))]);
+    const lined = scoreRoute(line, 360, new FeatureIndex({ roads: [road], pois: [], areas: [], buildings: houses }, []), { departAt: NIGHT, tz: TZ });
+    // A few buildings exist in the area, but none face this street.
+    const far = resample(line, 100).map((s) => box(destinationPoint(s.point, 90, 120)));
+    const blank = scoreRoute(line, 360, new FeatureIndex({ roads: [road], pois: [], areas: [], buildings: [...far, ...houses.slice(0, 6)] }, []), {
+      departAt: NIGHT,
+      tz: TZ,
+    });
+    const unmapped = scoreRoute(line, 360, new FeatureIndex({ roads: [road], pois: [], areas: [] }, []), { departAt: NIGHT, tz: TZ });
+    expect(lined.factors.frontage).toBeGreaterThan(90);
+    expect(lined.highlights.join(" ")).toMatch(/Homes and shops/);
+    expect(blank.factors.frontage).toBeLessThan(40);
+    expect(unmapped.factors.frontage).toBe(50);
+    expect(unmapped.confidence.notes.join(" ")).toMatch(/Buildings are barely mapped/);
+    expect(lined.score).toBeGreaterThan(unmapped.score);
+  });
+
+  it("penalises fast multi-lane roads without a footpath", () => {
+    expect(walkpathScore({ highway: "primary", sidewalk: "no", lanes: "6" }, false)).toMatchObject({ score: 15, reason: "Fast, wide road without a footpath" });
+    expect(walkpathScore({ highway: "primary", maxspeed: "70" }, false).score).toBe(40);
+    expect(walkpathScore({ highway: "primary", sidewalk: "both", lanes: "6" }, false).score).toBe(85);
+  });
+});
+
 describe("helpers", () => {
   it("merges consecutive weak segments into stretches", () => {
     const seg = (from: number, score: number, reasons: string[] = []): ScoredSegment => ({
@@ -210,7 +267,7 @@ describe("helpers", () => {
         [0, 0.001],
       ],
       score,
-      factors: { lighting: 0, activity: 0, walkpath: 0, isolation: 0, help: 0, transit: 0, community: 0 },
+      factors: { lighting: 0, activity: 0, frontage: 0, walkpath: 0, isolation: 0, help: 0, transit: 0, community: 0 },
       reasons,
     });
     const stretches = findWeakStretches([seg(0, 80), seg(100, 30, ["Poorly lit stretch"]), seg(200, 40, ["Poorly lit stretch"]), seg(300, 90)]);

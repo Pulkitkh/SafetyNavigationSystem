@@ -47,7 +47,31 @@ export interface Prefs {
 
 export const DEFAULT_PREFS: Prefs = { stepFree: false, voice: true, shakeSos: false };
 
+/** A place remembered on this device for quick reuse. */
+export interface SavedPlace {
+  label: string;
+  detail?: string;
+  point: LngLat;
+  tag?: "home" | "work";
+}
+
+export interface PlaceBook {
+  favorites: SavedPlace[];
+  recent: SavedPlace[];
+}
+
+const samePlace = (a: SavedPlace, b: SavedPlace) => Math.abs(a.point[0] - b.point[0]) < 1e-4 && Math.abs(a.point[1] - b.point[1]) < 1e-4;
+
+/** A running safety timer: check in before `endsAt` or SOS is raised. */
+export interface SafetyTimer {
+  startedAt: number;
+  endsAt: number;
+  note?: string;
+}
+
 const KEYS = {
+  timer: "safenav.timer",
+  places: "safenav.places",
   prefs: "safenav.prefs",
   contacts: "safenav.contacts",
   journey: "safenav.journey",
@@ -74,6 +98,25 @@ function write(key: string, value: unknown) {
 }
 
 export const store = {
+  timer: () => read<SafetyTimer>(KEYS.timer),
+  setTimer: (t: SafetyTimer | null) => {
+    write(KEYS.timer, t);
+    if (typeof window !== "undefined") window.dispatchEvent(new Event("safenav:timer"));
+  },
+  places: (): PlaceBook => ({ favorites: [], recent: [], ...(read<Partial<PlaceBook>>(KEYS.places) ?? {}) }),
+  addRecent: (p: SavedPlace) => {
+    const book = store.places();
+    write(KEYS.places, { ...book, recent: [p, ...book.recent.filter((r) => !samePlace(r, p))].slice(0, 8) });
+  },
+  /** Adds or removes a favourite; returns whether it is now a favourite. */
+  toggleFavorite: (p: SavedPlace): boolean => {
+    const book = store.places();
+    const exists = book.favorites.some((f) => samePlace(f, p));
+    write(KEYS.places, { ...book, favorites: exists ? book.favorites.filter((f) => !samePlace(f, p)) : [p, ...book.favorites].slice(0, 20) });
+    if (typeof window !== "undefined") window.dispatchEvent(new Event("safenav:places"));
+    return !exists;
+  },
+  isFavorite: (p: SavedPlace) => store.places().favorites.some((f) => samePlace(f, p)),
   prefs: (): Prefs => ({ ...DEFAULT_PREFS, ...(read<Partial<Prefs>>(KEYS.prefs) ?? {}) }),
   setPrefs: (patch: Partial<Prefs>) => {
     write(KEYS.prefs, { ...store.prefs(), ...patch });

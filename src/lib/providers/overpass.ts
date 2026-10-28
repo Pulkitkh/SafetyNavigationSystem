@@ -1,4 +1,4 @@
-import { simplify, type LngLat } from "@/lib/geo";
+import { simplify, type BBox, type LngLat } from "@/lib/geo";
 import { cached, endpoints, fetchJson, SkipEndpoint, UpstreamError, withFailover } from "./http";
 
 export type PoiKind =
@@ -44,6 +44,8 @@ export interface OsmFeatures {
   roads: Road[];
   pois: Poi[];
   areas: Area[];
+  /** Footprint bounds of buildings near the route: homes and shops facing the street. */
+  buildings?: BBox[];
 }
 
 interface OverpassElement {
@@ -53,8 +55,16 @@ interface OverpassElement {
   lon?: number;
   center?: { lat: number; lon: number };
   geometry?: { lat: number; lon: number }[];
+  bounds?: { minlat: number; minlon: number; maxlat: number; maxlon: number };
+  members?: { type: string; ref: number; role: string; geometry?: { lat: number; lon: number }[] }[];
   tags?: Record<string, string>;
 }
+
+/**
+ * Buildings that put people's eyes on the street. Factories, warehouses, sheds and
+ * garages are excluded: they are empty after hours.
+ */
+const BUILDING_FILTER = `[building][building!~"^(industrial|warehouse|factory|manufacture|garage|garages|shed|roof|ruins|construction|storage_tank|silo|hangar|transformer_tower|carport)$"]`;
 
 const FOOTFALL_AMENITIES =
   "restaurant|cafe|fast_food|food_court|bar|pub|ice_cream|pharmacy|bank|atm|fuel|marketplace|cinema|theatre|clinic|doctors|place_of_worship|bus_station|police|hospital";
@@ -100,8 +110,46 @@ out tags center qt;
   ${each((l) => `way(around:20,${l})[leisure~"^(park|nature_reserve)$"];`)}
   ${each((l) => `way(around:20,${l})[natural~"^(wood|scrub|wetland|heath)$"];`)}
   ${each((l) => `way(around:20,${l})[amenity=grave_yard];`)}
+  ${each((l) => `rel(around:20,${l})[type=multipolygon][landuse~"^(industrial|cemetery|military|railway|construction)$"];`)}
+  ${each((l) => `rel(around:20,${l})[type=multipolygon][leisure=park];`)}
 );
-out tags geom qt;`;
+out tags geom qt;
+(
+  ${each((l) => `way(around:30,${l})${BUILDING_FILTER};`)}
+);
+out ids bb qt;`;
+}
+
+/** Everything needed to judge the streets around one point right now. */
+export function buildAreaQuery(point: LngLat): string {
+  const at = `${point[1].toFixed(5)},${point[0].toFixed(5)}`;
+  return `[out:json][timeout:30][maxsize:67108864];
+way(around:180,${at})[highway];
+out tags geom qt;
+(
+  node(around:200,${at})[highway=street_lamp];
+  node(around:200,${at})[man_made=surveillance];
+  nwr(around:200,${at})[shop];
+  nwr(around:200,${at})[amenity~"^(${FOOTFALL_AMENITIES})$"];
+  nwr(around:400,${at})[highway=bus_stop];
+  nwr(around:400,${at})[public_transport~"^(platform|station)$"];
+  nwr(around:400,${at})[railway~"^(station|halt|subway_entrance|tram_stop)$"];
+  nwr(around:2000,${at})[amenity=police];
+  nwr(around:1500,${at})[amenity=hospital];
+  nwr(around:1000,${at})[amenity~"^(pharmacy|fuel)$"];
+);
+out tags center qt;
+(
+  way(around:60,${at})[landuse~"^(industrial|cemetery|brownfield|construction|quarry|railway|military|landfill)$"];
+  way(around:60,${at})[leisure~"^(park|nature_reserve)$"];
+  way(around:60,${at})[natural~"^(wood|scrub|wetland|heath)$"];
+  way(around:60,${at})[amenity=grave_yard];
+  rel(around:60,${at})[type=multipolygon][landuse~"^(industrial|cemetery|military|railway|construction)$"];
+  rel(around:60,${at})[type=multipolygon][leisure=park];
+);
+out tags geom qt;
+way(around:200,${at})${BUILDING_FILTER};
+out ids bb qt;`;
 }
 
 export function buildNearbyHelpQuery(point: LngLat, radiusM: number): string {
@@ -132,6 +180,8 @@ const ROAD_TAGS = new Set([
   "smoothness",
   "wheelchair",
   "service",
+  "lanes",
+  "maxspeed",
   "access",
 ]);
 
@@ -199,18 +249,61 @@ export function classifyArea(tags: Record<string, string>): AreaKind | null {
   return null;
 }
 
+/** Join a relation's outer member ways into closed rings (inner rings are ignored: conservative). */
+export function assembleRings(members: NonNullable<OverpassElement["members"]>): LngLat[][] {
+  const same = (a: LngLat, b: LngLat) => Math.abs(a[0] - b[0]) < 1e-7 && Math.abs(a[1] - b[1]) < 1e-7;
+  const parts: LngLat[][] = members
+    .filter((m) => m.type === "way" && m.role !== "inner" && m.geometry && m.geometry.length >= 2)
+    .map((m) => m.geometry!.map((g) => [g.lon, g.lat] as LngLat));
+  const rings: LngLat[][] = [];
+  while (parts.length) {
+    let ring = parts.shift()!;
+    let grew = true;
+    while (!same(ring[0], ring.at(-1)!) && grew) {
+      grew = false;
+      for (let i = 0; i < parts.length; i++) {
+        const p = parts[i];
+        const end = ring.at(-1)!;
+        if (same(p[0], end)) ring = [...ring, ...p.slice(1)];
+        else if (same(p.at(-1)!, end)) ring = [...ring, ...p.slice(0, -1).reverse()];
+        else continue;
+        parts.splice(i, 1);
+        grew = true;
+        break;
+      }
+    }
+    if (ring.length >= 4 && same(ring[0], ring.at(-1)!)) rings.push(ring);
+  }
+  return rings;
+}
+
 export function parseOverpass(elements: OverpassElement[]): OsmFeatures {
   const roads: Road[] = [];
   const pois: Poi[] = [];
   const areas: Area[] = [];
+  const buildings: BBox[] = [];
   const seen = new Set<string>();
 
   for (const el of elements) {
     const id = `${el.type[0]}${el.id}`;
     const tags = el.tags ?? {};
-    const key = `${id}:${el.geometry ? "g" : "c"}`;
+    // Buildings come from an `out ids bb` block: bounds and no tags.
+    const isBuilding = !el.tags && !el.geometry && !!el.bounds;
+    const key = `${id}:${isBuilding ? "b" : el.geometry ? "g" : "c"}`;
     if (seen.has(key)) continue;
     seen.add(key);
+    if (isBuilding) {
+      const b = el.bounds!;
+      buildings.push({ minLng: b.minlon, minLat: b.minlat, maxLng: b.maxlon, maxLat: b.maxlat });
+      continue;
+    }
+
+    // Large estates, parks and cemeteries are often multipolygon relations.
+    if (el.type === "relation" && el.members) {
+      const kind = classifyArea(tags);
+      if (kind) for (const ring of assembleRings(el.members)) areas.push({ id: `${id}:${areas.length}`, kind, ring });
+      continue;
+    }
 
     if (el.geometry && el.geometry.length >= 2) {
       const geometry: LngLat[] = el.geometry.map((g) => [g.lon, g.lat]);
@@ -242,7 +335,7 @@ export function parseOverpass(elements: OverpassElement[]): OsmFeatures {
       phone: tags.phone || tags["contact:phone"],
     });
   }
-  return { roads, pois, areas };
+  return { roads, pois, areas, buildings };
 }
 
 /** Public Overpass instances listed on the OSM wiki; OVERPASS_URL (comma-separated) overrides them. */
@@ -292,13 +385,20 @@ async function runQuery(query: string, ttlMs: number) {
           },
         }),
       );
-    });
+    }, Date.now, "OpenStreetMap data");
   });
 }
 
 /** Street-level features around each candidate route, in a single Overpass request. */
 export async function fetchRouteFeatures(routes: LngLat[][]): Promise<OsmFeatures> {
   const data = await runQuery(buildRouteQuery(routes), 24 * 3600_000);
+  return parseOverpass(data.elements);
+}
+
+/** Street data around one point, rounded to ~100 m so neighbours share the cache. */
+export async function fetchAreaFeatures(point: LngLat): Promise<OsmFeatures> {
+  const at: LngLat = [Math.round(point[0] * 1000) / 1000, Math.round(point[1] * 1000) / 1000];
+  const data = await runQuery(buildAreaQuery(at), 24 * 3600_000);
   return parseOverpass(data.elements);
 }
 

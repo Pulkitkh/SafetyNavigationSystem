@@ -1,5 +1,6 @@
 "use client";
 
+import { Fuel, Hospital, LifeBuoy, Navigation, Phone, Pill, Shield, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { DeviceSettings } from "@/components/DeviceSettings";
@@ -15,6 +16,7 @@ interface Place {
   openingHours?: string;
   point: [number, number];
   distance: number;
+  openNow: boolean | null;
 }
 
 interface Help {
@@ -33,6 +35,15 @@ const TIPS = [
   "Petrol pumps, hospitals and 24-hour pharmacies are good places to wait for help.",
 ];
 
+function OpenBadge({ open }: { open: boolean | null }) {
+  if (open == null) return null;
+  return (
+    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${open ? "bg-green-100 text-green-800" : "bg-slate-100 text-slate-500"}`}>
+      {open ? "Open now" : "Closed"}
+    </span>
+  );
+}
+
 export default function HelpPage() {
   const geo = useGeolocation();
   const [help, setHelp] = useState<Help | null>(null);
@@ -47,73 +58,92 @@ export default function HelpPage() {
       .catch((err: Error) => setError(err.message));
   }, [geo.fix, requested]);
 
-  const section = (title: string, places: Place[] | undefined, empty: string) => (
-    <div>
-      <h2 className="mb-2 font-semibold text-slate-900">{title}</h2>
-      {!places ? (
-        <p className="text-sm text-slate-500">{error ?? (geo.error || "Finding places near you…")}</p>
-      ) : places.length === 0 ? (
-        <p className="text-sm text-slate-500">{empty}</p>
-      ) : (
-        <ul className="space-y-2">
-          {places.map((p) => (
-            <li key={p.id} className="flex items-center gap-3 rounded-xl bg-white p-3 text-sm shadow-sm">
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-medium text-slate-900">{p.name ?? title.replace(/s$/, "")}</p>
-                <p className="text-slate-500">
-                  {formatDistance(p.distance)} away{p.openingHours ? ` · ${p.openingHours}` : ""}
-                </p>
-              </div>
-              {p.phone && (
-                <a href={`tel:${p.phone.split(";")[0].replace(/\s/g, "")}`} className="rounded-lg bg-slate-100 px-3 py-1.5 font-medium text-slate-800">
-                  Call
-                </a>
-              )}
-              <Link
-                href={`/?to=${p.point[0]},${p.point[1]}&label=${encodeURIComponent(p.name ?? title.replace(/s$/, ""))}`}
-                className="rounded-lg bg-brand-600 px-3 py-1.5 font-medium text-white"
-              >
-                Safe route
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
+  const section = (title: string, icon: LucideIcon, places: Place[] | undefined, empty: string, single: string) => {
+    const Icon = icon;
+    return (
+      <section className="card px-4 py-2">
+        <h2 className="flex items-center gap-2 pt-2 text-sm font-semibold text-slate-900">
+          <Icon className="h-4 w-4 text-brand-600" aria-hidden />
+          {title}
+        </h2>
+        {!places ? (
+          <p className="py-3 text-sm text-slate-500">{error ?? (geo.error || "Finding places near you…")}</p>
+        ) : places.length === 0 ? (
+          <p className="py-3 text-sm text-slate-500">{empty}</p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {places.map((p) => (
+              <li key={p.id} className="flex items-center gap-3 py-2.5 text-sm">
+                <div className="min-w-0 flex-1">
+                  <p className="flex items-center gap-1.5 font-medium text-slate-900">
+                    <span className="truncate">{p.name ?? single}</span>
+                    <OpenBadge open={p.openNow} />
+                  </p>
+                  <p className="truncate text-xs text-slate-500">
+                    {formatDistance(p.distance)} away{p.openingHours ? ` · ${p.openingHours}` : ""}
+                  </p>
+                </div>
+                {p.phone && (
+                  <a href={`tel:${p.phone.split(";")[0].replace(/\s/g, "")}`} aria-label={`Call ${p.name ?? single}`} className="rounded-full bg-slate-100 p-2 text-slate-800">
+                    <Phone className="h-4 w-4" />
+                  </a>
+                )}
+                <Link
+                  href={`/?to=${p.point[0]},${p.point[1]}&label=${encodeURIComponent(p.name ?? single)}`}
+                  className="flex items-center gap-1 rounded-full bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white"
+                >
+                  <Navigation className="h-3.5 w-3.5" aria-hidden />
+                  Safe route
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    );
+  };
 
   return (
     <main className="mx-auto max-w-lg pb-nav">
-      <PageHeader title="Help" subtitle="Emergency numbers work even without balance or mobile data." />
-      <div className="space-y-5 px-4">
+      <PageHeader title="Help" subtitle="Emergency numbers work even without balance or mobile data." icon={<LifeBuoy />} />
+      <div className="space-y-4 px-4">
         <ul className="grid grid-cols-2 gap-2">
-          {EMERGENCY_NUMBERS.map((n) => (
-            <li key={n.number} className={"primary" in n && n.primary ? "col-span-2" : ""}>
-              <a
-                href={`tel:${n.number}`}
-                className={`block rounded-2xl p-3 ${"primary" in n && n.primary ? "bg-red-600 text-white" : "bg-white text-slate-900 shadow-sm"}`}
-              >
-                <span className="block text-2xl font-bold">{n.number}</span>
-                <span className={`text-sm ${"primary" in n && n.primary ? "text-red-50" : "text-slate-600"}`}>{n.label}</span>
-              </a>
-            </li>
-          ))}
+          {EMERGENCY_NUMBERS.map((n) => {
+            const primary = "primary" in n && n.primary;
+            return (
+              <li key={n.number} className={primary ? "col-span-2" : ""}>
+                <a
+                  href={`tel:${n.number}`}
+                  className={`flex items-center gap-3 rounded-2xl p-3 ${primary ? "bg-gradient-to-br from-rose-600 to-red-700 text-white shadow-lg shadow-red-600/25" : "card text-slate-900"}`}
+                >
+                  <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${primary ? "bg-white/20" : "bg-rose-50 text-rose-600"}`}>
+                    <Phone className="h-5 w-5" aria-hidden />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-2xl font-extrabold leading-none">{n.number}</span>
+                    <span className={`mt-0.5 block truncate text-xs ${primary ? "text-red-50" : "text-slate-600"}`}>{n.label}</span>
+                  </span>
+                </a>
+              </li>
+            );
+          })}
         </ul>
 
-        {section("Police stations", help?.police, "No police station mapped within 3 km.")}
-        {section("Hospitals", help?.hospitals, "No hospital mapped within 3 km.")}
-        {help && help.pharmacies.length > 0 && section("24-hour pharmacies", help.pharmacies, "")}
+        {section("Police stations", Shield, help?.police, "No police station mapped within 3 km.", "Police station")}
+        {section("Hospitals", Hospital, help?.hospitals, "No hospital mapped within 3 km.", "Hospital")}
+        {help && help.pharmacies.length > 0 && section("24-hour pharmacies", Pill, help.pharmacies, "", "Pharmacy")}
+        {help && help.fuel.length > 0 && section("Petrol pumps (safe places to wait)", Fuel, help.fuel, "", "Petrol pump")}
 
         <DeviceSettings />
 
-        <div>
-          <h2 className="mb-2 font-semibold text-slate-900">Safety tips</h2>
+        <section className="card p-4">
+          <h2 className="mb-2 text-sm font-semibold text-slate-900">Safety tips</h2>
           <ul className="list-inside list-disc space-y-1 text-sm text-slate-700">
             {TIPS.map((t) => (
               <li key={t}>{t}</li>
             ))}
           </ul>
-        </div>
+        </section>
         <p className="text-xs text-slate-500">Places come from OpenStreetMap and may be incomplete. In an emergency always call 112.</p>
       </div>
     </main>

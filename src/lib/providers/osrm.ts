@@ -51,7 +51,7 @@ export function osrmBases(mode: TravelMode): string[] {
  */
 export async function osrmRoute(points: LngLat[], mode: TravelMode, alternatives: number): Promise<RawRoute[]> {
   try {
-    return await withFailover(osrmBases(mode), (base) => osrmRouteAt(base, points, alternatives));
+    return await withFailover(osrmBases(mode), (base) => osrmRouteAt(base, points, alternatives), Date.now, "routing");
   } catch (err) {
     if (process.env.VALHALLA_URL === "off") throw err;
     console.warn(`[routing] OSRM failed (${(err as Error).message}); falling back to Valhalla`);

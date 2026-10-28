@@ -1,5 +1,6 @@
 "use client";
 
+import { PhoneCall } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { PageHeader } from "@/components/Nav";
@@ -124,7 +125,7 @@ export default function FakeCallPage() {
 
   return (
     <main className="mx-auto max-w-lg pb-nav">
-      <PageHeader title="Fake call" subtitle="Get a realistic incoming call to leave an uncomfortable situation." />
+      <PageHeader title="Fake call" subtitle="Get a realistic incoming call to leave an uncomfortable situation." icon={<PhoneCall />} />
       <div className="space-y-4 px-4">
         <label className="block rounded-2xl bg-white p-4 text-sm font-medium text-slate-700 shadow-sm">
           Caller name

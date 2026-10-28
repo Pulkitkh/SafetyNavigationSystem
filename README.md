@@ -2,7 +2,10 @@
 
 SafeNav is a mobile-first web app (installable PWA) for getting around Indian cities safely. It:
 
-- **Finds the safest walking route.** Every 100 m of a route is scored from real OpenStreetMap data: street lighting, footpaths, shops that are actually open at the hour you'll pass, isolated land such as industrial estates and parks at night, back lanes, and distance to police stations and hospitals. It also uses community reports, the real sun position at your location and the **weather forecast for the hour you travel** (rain empties streets, fog dims lighting, downpours flood underpasses).
+- **Finds the safest walking route.** Every 100 m of a route is scored from real OpenStreetMap data: street lighting, footpaths, shops that are actually open at the hour you'll pass, homes and shops facing the street (not blank walls or warehouses), fast multi-lane roads, isolated land such as industrial estates and parks at night, back lanes, and distance to police stations and hospitals. It also uses community reports, the real sun position at your location and the **weather forecast for the hour you travel** (rain empties streets, fog dims lighting, downpours flood underpasses).
+- **Finds places other apps miss.** Search as you type, or press Enter for a full search of all of OpenStreetMap. Paste coordinates, a Google Maps or WhatsApp location link, or a Google plus code (`PV93+CR Indore`), or tap **Choose on map**. Results are filtered to India, ranked by name match, spelling variants and distance, and recent and starred places are kept on the phone.
+- **"Is it safe here right now?"** A live check of the streets around you, or any spot you tap: lighting, open places, homes facing the street, isolation, police distance and reports. It lists safe spots open now, with a safety-scored route to each.
+- **Safety timer.** Set a check-in time for a walk, a date or a wait. If you don't check in, SafeNav asks "Are you OK?" and sends SOS after 60 seconds.
 - **Step-free routes** for wheelchair users, older people, and anyone with a walker or stroller. Steps, unpaved and rough surfaces, and ways mapped as inaccessible are avoided, using a dedicated wheelchair routing profile.
 - **Voice turn-by-turn directions**, so your phone can stay in a pocket or bag. If you leave the route, **"Find a safe route from here"** re-plans with full safety scoring and updates your contacts' live view.
 - **Shares journeys live.** Trusted contacts get a link that shows your position, route, battery and status. No app or account is needed to view it.
@@ -34,8 +37,9 @@ Known limit: browsers pause location when the screen is locked or the app is in 
 | Roads, lights, footpaths, shops, opening hours, land use, police, hospitals, transit, CCTV | OpenStreetMap via [Overpass API](https://overpass-api.de) | Safety factors |
 | Walking and driving routes with alternatives | [OSRM](https://project-osrm.org) on routing.openstreetmap.de (car also on router.project-osrm.org) | Routes and turn-by-turn steps |
 | Fallback and wheelchair routing | [Valhalla](https://valhalla.github.io/valhalla/) on valhalla1.openstreetmap.de | When OSRM is down; step-free routes |
-| Place search (autocomplete) | [Photon](https://photon.komoot.io) | Search box |
-| Reverse geocoding | [Nominatim](https://nominatim.org) | Place names |
+| Place search (autocomplete) | [Photon](https://photon.komoot.io) | Search as you type |
+| Full search, reverse geocoding | [Nominatim](https://nominatim.org) | Explicit searches (Enter / "Search all places"), names for map taps and links. Throttled to 1 request per second, never used for autocomplete, per its policy |
+| Plus codes | [Open Location Code](https://github.com/google/open-location-code) (decoded locally) | Codes copied from Google Maps |
 | Hourly forecast: rain, thunderstorms, visibility | [Open-Meteo](https://open-meteo.com) | Fewer people out in rain, fog dims lighting, flooded underpasses |
 | Sunrise, sunset, twilight | [SunCalc](https://github.com/mourner/suncalc) (computed locally) | Day/night weighting |
 | Opening hours evaluation | [opening_hours.js](https://github.com/opening-hours/opening_hours.js) | Whether a shop is open when you pass |
@@ -123,11 +127,12 @@ In India, application-to-person SMS needs **DLT registration** (TRAI rules): reg
 
 ```
 src/
-  app/                 Pages (plan, journey, report, contacts, help, fake-call, about, account, live viewer /t/[token])
-    api/               Route handlers (auth, contacts, reports, routes/plan, trips + reroute, sos, share, places, geocode, health)
+  app/                 Pages (plan, journey, safety, area, timer, report, contacts, help, fake-call, about, account, live viewer /t/[token])
+    api/               Route handlers (auth, contacts, reports, routes/plan, trips + reroute, sos, share, places, geocode, safety/area, health)
   components/          Map, SOS system, route cards, search, navigation
   lib/
-    safety/            Scoring engine (score.ts), route planning (plan.ts)
+    safety/            Scoring engine (score.ts), route planning (plan.ts), area check (area.ts)
+    location-input.ts  Coordinates, map links and plus codes
     providers/         OSRM, Valhalla, Overpass, Photon/Nominatim, Open-Meteo clients with failover and a shared DB cache
     client/            Browser hooks: GPS (native background GPS in the app), voice guidance, shake detection
     monitor.ts         Off-route / stopped / overdue rules for live journeys

@@ -98,9 +98,11 @@ export async function withFailover<T>(
   /** `remaining` counts this mirror and the ones still to try, so callers can share a time budget. */
   fn: (base: string, remaining: number) => Promise<T>,
   now = Date.now,
+  /** Named in errors shown to people, e.g. "routing" or "OpenStreetMap data". */
+  service = "data",
 ): Promise<T> {
   const healthy = bases.filter((b) => (breakers.get(b)?.until ?? 0) <= now());
-  if (!healthy.length) throw new UpstreamError("all endpoints failed recently; retrying after a short pause", "upstream", 503);
+  if (!healthy.length) throw new UpstreamError(`${service}: all endpoints failed recently; retrying after a short pause`, service, 503);
   let lastError: unknown;
   for (const [i, base] of healthy.entries()) {
     try {
@@ -116,7 +118,7 @@ export async function withFailover<T>(
       breakers.set(base, { failures, until: now() + Math.min(MAX_COOL_DOWN_MS, COOL_DOWN_MS * 2 ** (failures - 1)) });
     }
   }
-  throw lastError instanceof SkipEndpoint ? new UpstreamError(lastError.message, "upstream", 504) : lastError;
+  throw lastError instanceof SkipEndpoint ? new UpstreamError(lastError.message, service, 504) : lastError;
 }
 
 /** Expired entries stay this long so they can be served when every upstream is down. */
