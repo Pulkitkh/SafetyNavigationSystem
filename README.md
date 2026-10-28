@@ -145,6 +145,8 @@ scripts/smoke-live.mjs Live checks against the real data services
 
 - Live links use 128-bit random tokens, and only a SHA-256 hash is stored. They stop working 2 hours after a trip ends.
 - Reports never reveal who filed them, and you can't vote on your own report.
+- Request bodies are capped at 1 MB, so oversized posts can't exhaust server memory.
+- `npm audit` flags maplibre-gl ≤ 6.4 (XSS in `DOM.sanitize`) and the postcss bundled with Next.js. Neither is reachable here: map popups use `setText`, and the map style is a fixed trusted source; postcss only processes our own CSS at build time. Both fixes need major-version upgrades, so take them deliberately.
 - Location is sent only during a journey or an active SOS. Device preferences (step-free, voice, shake to SOS) stay on the phone.
 - A safety score is guidance, not a guarantee. In an emergency, call **112**.
 

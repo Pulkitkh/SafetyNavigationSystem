@@ -16,10 +16,35 @@ export function json(data: unknown, status = 200) {
   return NextResponse.json(data, { status, headers: { "Cache-Control": "no-store" } });
 }
 
+/** Largest accepted request body. A 20,000-point route is about 500 KB. */
+export const MAX_BODY_BYTES = 1_000_000;
+
+/** Read a body without ever buffering more than `limit` bytes, so oversized posts can't exhaust memory. */
+export async function readLimited(req: Request, limit = MAX_BODY_BYTES): Promise<string> {
+  const declared = Number(req.headers.get("content-length"));
+  if (declared > limit) throw new ApiError(413, "Request is too large");
+  if (!req.body) return "";
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > limit) {
+      await reader.cancel().catch(() => {});
+      throw new ApiError(413, "Request is too large");
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 export async function parseBody<S extends ZodTypeAny>(req: NextRequest, schema: S): Promise<z.output<S>> {
+  const text = await readLimited(req);
   let body: unknown;
   try {
-    body = await req.json();
+    body = JSON.parse(text);
   } catch {
     throw new ApiError(400, "Request body must be JSON");
   }
