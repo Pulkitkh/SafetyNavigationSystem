@@ -25,8 +25,9 @@ export const POST = route(async (req: NextRequest, { params }: Ctx) => {
   // Recount from the votes table so repeated or changed votes stay consistent.
   const [counts] = await db
     .select({
-      up: sql<number>`coalesce(sum(case when ${schema.reportVotes.value} = 1 then 1 else 0 end), 0)`,
-      down: sql<number>`coalesce(sum(case when ${schema.reportVotes.value} = -1 then 1 else 0 end), 0)`,
+      // sum() is a bigint, which Postgres drivers return as a string: cast and map to a number.
+      up: sql<number>`coalesce(sum(case when ${schema.reportVotes.value} = 1 then 1 else 0 end), 0)::int`.mapWith(Number),
+      down: sql<number>`coalesce(sum(case when ${schema.reportVotes.value} = -1 then 1 else 0 end), 0)::int`.mapWith(Number),
     })
     .from(schema.reportVotes)
     .where(eq(schema.reportVotes.reportId, id));
