@@ -43,7 +43,7 @@ Render's 750 free hours a month). With Supabase:
 
 ```sql
 create extension if not exists pg_cron;
-create extension if not exists pg_net;
+create extension if not exists pg_net schema extensions;
 select vault.create_secret('<CRON_SECRET>', 'safenav_cron_secret');
 select cron.schedule('safenav-watchdog', '* * * * *', $$
   select net.http_post(
