@@ -3,7 +3,9 @@ import { sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { checkUpstreams, summarise } from "@/lib/providers/health";
 import { olaEnabled } from "@/lib/providers/ola";
+import { telegramEnabled, vapidPublicKey } from "@/lib/server/alerts";
 import { json, rateLimit, route } from "@/lib/server/http";
+import { smsProvider } from "@/lib/server/sms";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +27,12 @@ export const GET = route(async (req: NextRequest) => {
   const { ok, services } = summarise(probes);
   const healthy = ok && database;
   // Optional extras are reported but not probed, so health checks don't spend their quotas.
-  const optional = { "place search (Ola Maps)": olaEnabled() ? "configured" : "not configured" };
+  const on = (v: boolean) => (v ? "configured" : "not configured");
+  const optional = {
+    "place search (Ola Maps)": on(olaEnabled()),
+    "SOS app notifications (Web Push)": on(!!vapidPublicKey() && !!process.env.VAPID_PRIVATE_KEY),
+    "SOS alerts on Telegram": on(telegramEnabled()),
+    "SOS SMS gateway": on(!!smsProvider()),
+  };
   return json({ ok: healthy, database, services, optional, probes, checkedAt: new Date().toISOString() }, healthy ? 200 : 503);
 });

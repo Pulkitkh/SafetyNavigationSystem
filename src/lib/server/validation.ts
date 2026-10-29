@@ -79,6 +79,8 @@ export const startTripInput = z
     dest: point,
     route: z.array(point).min(2).max(20_000),
     durationS: z.number().positive().max(24 * 3600),
+    // Tell contacts who turned on alerts that the journey started, with the live link.
+    notifyContacts: z.boolean().optional().default(true),
     vehicleType: z.enum(VEHICLE_TYPES).optional(),
     vehiclePlate: z
       .string()
@@ -120,3 +122,31 @@ export const rerouteInput = z.object({
   route: z.array(point).min(2).max(20_000),
   durationS: z.number().positive().max(24 * 3600),
 });
+
+/** Browser push services we deliver to. Anything else is refused, so a subscription can't make the server call arbitrary URLs. */
+const PUSH_HOSTS = /^(fcm\.googleapis\.com|android\.googleapis\.com|([a-z0-9-]+\.)*push\.services\.mozilla\.com|web\.push\.apple\.com|([a-z0-9-]+\.)*notify\.windows\.com)$/;
+
+export const pushSubscriptionInput = z.object({
+  subscription: z.object({
+    endpoint: z
+      .string()
+      .url()
+      .max(1000)
+      .refine((u) => {
+        try {
+          const url = new URL(u);
+          return url.protocol === "https:" && PUSH_HOSTS.test(url.hostname);
+        } catch {
+          return false;
+        }
+      }, "Unsupported push service"),
+    keys: z.object({ p256dh: z.string().min(10).max(200), auth: z.string().min(8).max(100) }),
+  }),
+  label: z.string().trim().max(60).optional(),
+});
+
+export const unsubscribeInput = z.object({ endpoint: z.string().url().max(1000) });
+
+export const seenInput = z.object({ g: z.string().min(8).max(64) });
+
+export const inviteToken = z.string().regex(/^[A-Za-z0-9_-]{22,64}$/);

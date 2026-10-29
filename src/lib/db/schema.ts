@@ -152,6 +152,61 @@ export const sosEvents = sqliteTable(
   (t) => [index("sos_user_idx").on(t.userId)],
 );
 
+/**
+ * A link a user sends to one trusted contact once. Opening it lets that contact
+ * receive SOS alerts automatically (app notification or Telegram), with no
+ * action needed from the user at the moment of danger.
+ */
+export const guardianInvites = sqliteTable("guardian_invites", {
+  // SHA-256 of the token in the invite link.
+  tokenHash: text("token_hash").primaryKey(),
+  contactId: text("contact_id")
+    .notNull()
+    .references(() => contacts.id, { onDelete: "cascade" }),
+  createdAt: createdAt(),
+});
+
+/** Where a trusted contact receives alerts: a browser/app push subscription or a Telegram chat. */
+export const guardianDevices = sqliteTable(
+  "guardian_devices",
+  {
+    id: text("id").primaryKey(),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contacts.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["push", "telegram"] }).notNull(),
+    // Push: the subscription endpoint. Telegram: the chat id.
+    address: text("address").notNull(),
+    // Push only: the subscription's p256dh and auth keys as JSON.
+    keys: text("keys"),
+    label: text("label"),
+    failures: integer("failures").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("guardian_devices_addr_idx").on(t.contactId, t.kind, t.address), index("guardian_devices_contact_idx").on(t.contactId)],
+);
+
+/** One alert sent to one contact over one channel, so the person in danger can see who was reached. */
+export const alertDeliveries = sqliteTable(
+  "alert_deliveries",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    tripId: text("trip_id")
+      .notNull()
+      .references(() => trips.id, { onDelete: "cascade" }),
+    contactId: text("contact_id").references(() => contacts.id, { onDelete: "set null" }),
+    deviceId: text("device_id"),
+    kind: text("kind").notNull(), // sos | safe | journey
+    channel: text("channel").notNull(), // push | telegram | sms_gateway
+    ok: integer("ok", { mode: "boolean" }).notNull(),
+    error: text("error"),
+    // Set when the contact opens the live-tracking page from this alert.
+    seenAt: integer("seen_at", { mode: "timestamp_ms" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("alert_deliveries_trip_idx").on(t.tripId)],
+);
+
 // Shared response cache for slow public APIs (Overpass, routing, geocoding).
 export const apiCache = sqliteTable("api_cache", {
   key: text("key").primaryKey(),

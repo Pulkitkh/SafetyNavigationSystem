@@ -2,7 +2,10 @@ import type { NextRequest } from "next/server";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId, sha256 } from "@/lib/server/auth";
+import { alertContacts } from "@/lib/server/alerts";
 import { json, parseBody, rateLimit, requireUser, route } from "@/lib/server/http";
+import { shareUrl } from "@/lib/server/url";
+import { VEHICLE_LABELS, type VehicleType } from "@/lib/phone";
 import { endOpenTrips, expectedArrivalFor } from "@/lib/server/trips";
 import { startTripInput } from "@/lib/server/validation";
 import { simplify, type LngLat } from "@/lib/geo";
@@ -32,7 +35,24 @@ export const POST = route(async (req: NextRequest) => {
       vehicleNote: input.vehicleNote ?? null,
     })
     .returning();
-  return json({ trip: { id: trip.id, status: trip.status, expectedArrival: trip.expectedArrival } }, 201);
+  let notified = 0;
+  if (input.notifyContacts) {
+    const contacts = await db.select({ id: schema.contacts.id }).from(schema.contacts).where(eq(schema.contacts.userId, user.id));
+    const time = expectedArrival.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: process.env.APP_TIMEZONE || "Asia/Kolkata" });
+    const vehicle = [input.vehicleType ? VEHICLE_LABELS[input.vehicleType as VehicleType] : null, input.vehiclePlate].filter(Boolean).join(" ");
+    const results = await alertContacts(
+      contacts.map((c) => c.id),
+      {
+        kind: "journey",
+        tripId: trip.id,
+        title: `${user.name} started a ${input.mode === "ride" ? "ride" : "walk"}`,
+        body: `Going to ${input.destLabel}${vehicle ? ` in ${vehicle}` : ""}, expected by ${time}. Tap to follow live. You'll be alerted if anything looks wrong.`,
+        url: shareUrl(req, input.shareToken),
+      },
+    ).catch(() => []);
+    notified = new Set(results.filter((r) => r.ok).map((r) => r.contactId)).size;
+  }
+  return json({ trip: { id: trip.id, status: trip.status, expectedArrival: trip.expectedArrival }, notified }, 201);
 });
 
 /** The user's open trip, if any, so a reload or a second device can resume monitoring. */

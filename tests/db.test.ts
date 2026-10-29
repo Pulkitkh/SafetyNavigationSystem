@@ -9,7 +9,7 @@ describe("migration SQL", () => {
     await client.executeMultiple(MIGRATION_SQL);
     const rows = await client.execute("select name from sqlite_master where type='table' order by name");
     const names = rows.rows.map((r) => r.name);
-    for (const t of ["users", "sessions", "contacts", "reports", "report_votes", "trips", "trip_points", "sos_events", "api_cache"]) {
+    for (const t of ["users", "sessions", "contacts", "reports", "report_votes", "trips", "trip_points", "sos_events", "api_cache", "guardian_invites", "guardian_devices", "alert_deliveries"]) {
       expect(names).toContain(t);
     }
   });

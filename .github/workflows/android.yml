@@ -1,0 +1,84 @@
+# Builds the SafeNav Android app and publishes the APK as a GitHub release, so
+# it can be installed from:
+#   https://github.com/Pulkitkh/SafetyNavigationSystem/releases/latest/download/SafeNav.apk
+name: Android app
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "android/**"
+      - "capacitor.config.ts"
+      - "native/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      CAP_SERVER_URL: ${{ vars.APP_URL || 'https://safenav-0ywr.onrender.com' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - run: npm ci
+
+      # Copies the Capacitor config (with the live site URL) and plugins into the Android project.
+      - run: npx cap sync android
+
+      - name: Use the release signing key, if one is configured
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build APK
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease -PversionCode=${{ github.run_number }} -PversionName=1.${{ github.run_number }}
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/SafeNav.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SafeNav-apk
+          path: ${{ runner.temp }}/SafeNav.apk
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-v1.${{ github.run_number }}
+          name: SafeNav for Android 1.${{ github.run_number }}
+          make_latest: true
+          files: ${{ runner.temp }}/SafeNav.apk
+          body: |
+            Install on Android: open this page on your phone, tap **SafeNav.apk**, then allow installing from your browser when asked.
+
+            Built from ${{ github.sha }}.

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press the app icon: "Send SOS" alerts contacts without opening the app first. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="sos"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_sos"
+        android:shortcutShortLabel="@string/shortcut_sos_short"
+        android:shortcutLongLabel="@string/shortcut_sos_long">
+        <intent
+            android:action="in.safenav.app.SOS"
+            android:targetPackage="in.safenav.app"
+            android:targetClass="in.safenav.app.MainActivity" />
+    </shortcut>
+</shortcuts>

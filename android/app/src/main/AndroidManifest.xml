@@ -22,7 +22,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+
         </activity>
+
+        <!-- Shake to SOS with the screen locked. -->
+        <service
+            android:name=".ShakeGuardService"
+            android:exported="false"
+            android:foregroundServiceType="location|specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Listens for a hard shake of the phone so the user can raise an SOS to their emergency contacts without unlocking it." />
+        </service>
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -40,6 +52,16 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Check-in and SOS alerts vibrate the phone. -->
     <uses-permission android:name="android.permission.VIBRATE" />
-    <!-- Location, foreground-service and notification permissions are merged in from
-         @capacitor-community/background-geolocation. -->
+    <!-- SOS texts trusted contacts straight from the phone's SIM, with no tap needed. -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <!-- Shake to SOS keeps listening with the screen off. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- Tablets without a SIM can still install the app; SOS then uses app and Telegram alerts. -->
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
 </manifest>

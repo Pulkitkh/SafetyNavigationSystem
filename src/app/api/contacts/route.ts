@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/server/auth";
 import { ApiError, json, parseBody, requireUser, route } from "@/lib/server/http";
@@ -15,7 +15,22 @@ export const GET = route(async () => {
     .from(schema.contacts)
     .where(eq(schema.contacts.userId, user.id))
     .orderBy(desc(schema.contacts.isPrimary), asc(schema.contacts.createdAt));
-  return json({ contacts });
+  const devices = contacts.length
+    ? await db
+        .select({ contactId: schema.guardianDevices.contactId, kind: schema.guardianDevices.kind })
+        .from(schema.guardianDevices)
+        .where(inArray(schema.guardianDevices.contactId, contacts.map((c) => c.id)))
+    : [];
+  return json({
+    contacts: contacts.map((c) => ({
+      ...c,
+      // Channels that reach this contact automatically when SOS is pressed.
+      alerts: {
+        push: devices.filter((d) => d.contactId === c.id && d.kind === "push").length,
+        telegram: devices.filter((d) => d.contactId === c.id && d.kind === "telegram").length,
+      },
+    })),
+  });
 });
 
 export const POST = route(async (req: NextRequest) => {

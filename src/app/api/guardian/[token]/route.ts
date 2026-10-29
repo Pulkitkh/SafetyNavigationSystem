@@ -1,0 +1,27 @@
+import type { NextRequest } from "next/server";
+import { eq } from "drizzle-orm";
+import { getDb, schema } from "@/lib/db";
+import { ensureTelegramWebhook, telegramBotName, vapidPublicKey } from "@/lib/server/alerts";
+import { inviteFor } from "@/lib/server/guardian";
+import { json, rateLimit, route } from "@/lib/server/http";
+import { appUrl } from "@/lib/server/url";
+
+type Ctx = { params: Promise<{ token: string }> };
+
+/** What the invite page needs: who invited whom, and which alert channels are available. */
+export const GET = route(async (req: NextRequest, { params }: Ctx) => {
+  rateLimit(req, "guardian", 60, 60_000);
+  const { token } = await params;
+  const { contact, userName } = await inviteFor(token);
+  const db = await getDb();
+  const devices = await db.select({ kind: schema.guardianDevices.kind }).from(schema.guardianDevices).where(eq(schema.guardianDevices.contactId, contact.id));
+  await ensureTelegramWebhook(appUrl(req));
+  const bot = await telegramBotName();
+  return json({
+    userName,
+    contactName: contact.name,
+    vapidPublicKey: vapidPublicKey(),
+    telegram: bot ? `https://t.me/${bot}?start=${token}` : null,
+    linked: { push: devices.filter((d) => d.kind === "push").length, telegram: devices.filter((d) => d.kind === "telegram").length },
+  });
+});

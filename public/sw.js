@@ -1,6 +1,6 @@
 // SafeNav service worker: keeps the app shell (including the SOS and Help
 // screens) available offline. API calls are never cached here.
-const VERSION = "safenav-v3";
+const VERSION = "safenav-v4";
 const SHELL = ["/", "/help", "/journey", "/contacts", "/fake-call", "/timer", "/safety", "/manifest.webmanifest", "/icons/icon-192.png"];
 
 self.addEventListener("install", (event) => {
@@ -55,4 +55,43 @@ self.addEventListener("fetch", (event) => {
       ),
     );
   }
+});
+
+// Alerts for trusted contacts. An SOS stays on screen until dismissed and
+// vibrates hard, so it isn't missed like an ordinary notification.
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { title: "SafeNav alert", body: event.data ? event.data.text() : "" };
+  }
+  const sos = data.kind === "sos";
+  event.waitUntil(
+    self.registration.showNotification(data.title || "SafeNav alert", {
+      body: data.body || "",
+      tag: data.tag || data.kind || "safenav",
+      renotify: true,
+      requireInteraction: sos,
+      vibrate: sos ? [600, 200, 600, 200, 600, 200, 1200] : [200, 100, 200],
+      icon: "/icons/icon-192.png",
+      badge: "/icons/badge-72.png",
+      data: { url: data.url || "/" },
+      actions: data.url ? [{ action: "open", title: sos ? "See live location" : "Open" }] : [],
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "/";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+      const target = new URL(url, self.location.origin).href;
+      for (const w of wins) {
+        if (w.url === target && "focus" in w) return w.focus();
+      }
+      return self.clients.openWindow(target);
+    }),
+  );
 });

@@ -4,4 +4,6 @@
     <string name="title_activity_main">SafeNav</string>
     <string name="package_name">in.safenav.app</string>
     <string name="custom_url_scheme">in.safenav.app</string>
+    <string name="shortcut_sos_short">Send SOS</string>
+    <string name="shortcut_sos_long">Send SOS to my trusted contacts</string>
 </resources>

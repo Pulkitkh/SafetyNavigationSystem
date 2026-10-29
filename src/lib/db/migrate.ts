@@ -101,6 +101,40 @@ CREATE TABLE IF NOT EXISTS "trips" (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "trips_share_idx" ON "trips" ("share_token_hash");
 CREATE INDEX IF NOT EXISTS "trips_user_idx" ON "trips" ("user_id","status");
+CREATE TABLE IF NOT EXISTS "guardian_invites" (
+	"token_hash" text PRIMARY KEY NOT NULL,
+	"contact_id" text NOT NULL,
+	"created_at" integer DEFAULT (unixepoch() * 1000) NOT NULL,
+	FOREIGN KEY ("contact_id") REFERENCES "contacts"("id") ON UPDATE no action ON DELETE cascade
+);
+CREATE TABLE IF NOT EXISTS "guardian_devices" (
+	"id" text PRIMARY KEY NOT NULL,
+	"contact_id" text NOT NULL,
+	"kind" text NOT NULL,
+	"address" text NOT NULL,
+	"keys" text,
+	"label" text,
+	"failures" integer DEFAULT 0 NOT NULL,
+	"created_at" integer DEFAULT (unixepoch() * 1000) NOT NULL,
+	FOREIGN KEY ("contact_id") REFERENCES "contacts"("id") ON UPDATE no action ON DELETE cascade
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "guardian_devices_addr_idx" ON "guardian_devices" ("contact_id","kind","address");
+CREATE INDEX IF NOT EXISTS "guardian_devices_contact_idx" ON "guardian_devices" ("contact_id");
+CREATE TABLE IF NOT EXISTS "alert_deliveries" (
+	"id" integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	"trip_id" text NOT NULL,
+	"contact_id" text,
+	"device_id" text,
+	"kind" text NOT NULL,
+	"channel" text NOT NULL,
+	"ok" integer NOT NULL,
+	"error" text,
+	"seen_at" integer,
+	"created_at" integer DEFAULT (unixepoch() * 1000) NOT NULL,
+	FOREIGN KEY ("trip_id") REFERENCES "trips"("id") ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY ("contact_id") REFERENCES "contacts"("id") ON UPDATE no action ON DELETE set null
+);
+CREATE INDEX IF NOT EXISTS "alert_deliveries_trip_idx" ON "alert_deliveries" ("trip_id");
 CREATE TABLE IF NOT EXISTS "users" (
 	"id" text PRIMARY KEY NOT NULL,
 	"name" text NOT NULL,

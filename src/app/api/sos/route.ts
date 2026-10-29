@@ -5,6 +5,7 @@ import { mapsLink, sosMessage } from "@/lib/sos";
 import { VEHICLE_LABELS, type VehicleType } from "@/lib/phone";
 import { newId, sha256 } from "@/lib/server/auth";
 import { json, parseBody, rateLimit, requireUser, route } from "@/lib/server/http";
+import { alertContacts, type DeliveryResult } from "@/lib/server/alerts";
 import { smsProvider, type SmsResult } from "@/lib/server/sms";
 import { endOpenTrips, ownedTrip } from "@/lib/server/trips";
 import { shareUrl } from "@/lib/server/url";
@@ -79,15 +80,59 @@ export const POST = route(async (req: NextRequest) => {
     reason: TRIGGER_REASON[input.trigger],
   });
 
+  // Everything that needs no action on the phone goes out at once, in parallel:
+  // app notifications and Telegram to linked contacts, and a paid SMS gateway if configured.
   const provider = smsProvider();
-  let results: SmsResult[] = [];
-  if (provider && contacts.length) {
-    results = await provider.send(
-      contacts.map((c) => c.phone),
-      message,
-      { name: user.name, link: liveUrl ?? (hasLocation ? mapsLink(input.lat!, input.lng!) : ""), place: hasLocation ? `${input.lat!.toFixed(5)},${input.lng!.toFixed(5)}` : "" },
+  const reason = TRIGGER_REASON[input.trigger];
+  const [alerts, results] = await Promise.all([
+    alertContacts(
+      contacts.map((c) => c.id),
+      {
+        kind: "sos",
+        tripId,
+        title: `SOS: ${user.name} needs help`,
+        body: [
+          reason ? `Automatic alert: ${reason}.` : `${user.name} pressed SOS.`,
+          vehicle ? `Vehicle: ${vehicle}.` : null,
+          hasLocation ? "Tap to see their live location, then call them. If you can't reach them, dial 112." : "Their location isn't available yet. Call them now; if you can't reach them, dial 112.",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        url: liveUrl,
+        lat: input.lat,
+        lng: input.lng,
+      },
+    ).catch((err): DeliveryResult[] => {
+      console.error(`[sos] alerts: ${(err as Error).message}`);
+      return [];
+    }),
+    provider && contacts.length
+      ? provider.send(
+          contacts.map((c) => c.phone),
+          message,
+          { name: user.name, link: liveUrl ?? (hasLocation ? mapsLink(input.lat!, input.lng!) : ""), place: hasLocation ? `${input.lat!.toFixed(5)},${input.lng!.toFixed(5)}` : "" },
+        )
+      : Promise.resolve([] as SmsResult[]),
+  ]);
+  if (results.length) {
+    await db.insert(schema.alertDeliveries).values(
+      results.map((r) => ({
+        tripId,
+        contactId: contacts.find((c) => c.phone === r.to)?.id ?? null,
+        kind: "sos",
+        channel: "sms_gateway",
+        ok: r.ok,
+        error: r.error?.slice(0, 200) ?? null,
+      })),
     );
   }
+
+  // Per contact: the channels that reached them without the phone doing anything.
+  const reach = contacts.map((c) => ({
+    contactId: c.id,
+    delivered: [...alerts.filter((a) => a.contactId === c.id && a.ok).map((a) => a.channel), ...results.filter((r) => r.to === c.phone && r.ok).map(() => "sms_gateway")],
+    failed: [...alerts.filter((a) => a.contactId === c.id && !a.ok).map((a) => a.channel), ...results.filter((r) => r.to === c.phone && !r.ok).map(() => "sms_gateway")],
+  }));
 
   await db.insert(schema.sosEvents).values({
     id: newId(),
@@ -96,9 +141,9 @@ export const POST = route(async (req: NextRequest) => {
     lat: input.lat ?? null,
     lng: input.lng ?? null,
     trigger: input.trigger,
-    channel: provider ? `gateway:${provider.name}` : "device",
-    delivered: results.filter((r) => r.ok).length,
-    failed: results.filter((r) => !r.ok).length,
+    channel: [alerts.length ? "alerts" : null, provider ? `gateway:${provider.name}` : null].filter(Boolean).join("+") || "device",
+    delivered: reach.filter((r) => r.delivered.length).length,
+    failed: reach.filter((r) => !r.delivered.length && r.failed.length).length,
   });
 
   return json({
@@ -107,5 +152,6 @@ export const POST = route(async (req: NextRequest) => {
     message,
     contacts: contacts.map((c) => ({ id: c.id, name: c.name, phone: c.phone, relation: c.relation })),
     gateway: provider ? { provider: provider.name, results } : null,
+    reach,
   });
 });
