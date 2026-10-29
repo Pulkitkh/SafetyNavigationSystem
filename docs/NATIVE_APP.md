@@ -7,9 +7,31 @@ SafeNav runs on the web, as an installable PWA, and as a native Android/iOS app 
 | Safe route planning, SOS, live sharing, reports | ✓ | ✓ |
 | GPS with the screen locked during a journey | ✗ (screen must stay on) | ✓ (foreground service with a persistent notification) |
 | Location uploads while in the background | Paused | ✓ (native HTTP, not throttled) |
+| SOS texts contacts with no tap, even offline | ✗ (opens the SMS app) | ✓ Android (`SEND_SMS`, from the user's SIM) |
+| Shake to SOS with the screen locked | ✗ (only while open) | ✓ Android (foreground service, cancellable countdown notification) |
+| "Send SOS" from the home-screen icon | – | ✓ Android (long-press the icon) |
+| SOS when the site can't load | Cached help page | ✓ Bundled offline page with a confirmed native SOS |
 | Store listing | – | Google Play / App Store |
 
 The web code detects the shell (`src/lib/client/native.ts`). During a journey it switches to [`@capacitor-community/background-geolocation`](https://github.com/capacitor-community/background-geolocation). Everywhere else it uses the normal browser APIs.
+
+## Download
+
+Every push to `main` that touches the app builds a signed APK in GitHub Actions (`.github/workflows/android.yml`) and publishes it as the latest release:
+
+https://github.com/Pulkitkh/SafetyNavigationSystem/releases/latest/download/SafeNav.apk
+
+Builds are signed with the key in `android/app/safenav-debug.keystore`, so each new APK installs over the last one. For a Play Store release, add a private key as the secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`; the workflow then signs with it instead. Google Play only allows `SEND_SMS` for approved use cases, so a Play listing needs the SMS permission declaration form (emergency alerts) or a build without automatic SMS.
+
+## Native SOS (Android)
+
+`android/app/src/main/java/in/safenav/app/`:
+
+- **`SosSms`** sends SMS through `SmsManager` and reports delivery per number.
+- **`SosNative`** runs the whole SOS without the web app: SMS first (works offline), then `POST /api/sos` with the session cookie, so app and Telegram alerts and the live link follow. A location found after the first SMS is texted as a follow-up.
+- **`ShakeGuardService`** listens for a hard shake with the screen off. While the app is open it hands the shake to the web app's countdown; otherwise it shows a countdown notification with Cancel and Send now.
+- **`SafeNavNativePlugin`** is the bridge the web app uses (`src/lib/client/native.ts`, `src/components/NativeBridge.tsx`): permissions, sending SMS, keeping contacts and settings in sync on the device, and reporting SOS sent while the app was closed.
+- **`MainActivity`** handles the "Send SOS" launcher shortcut and the `safenavsos://send` link on the offline page (always with a confirmation, since any web page could link to it).
 
 ## Build
 

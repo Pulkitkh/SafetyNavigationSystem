@@ -11,12 +11,19 @@ SafeNav is a mobile-first web app (installable PWA) for getting around Indian ci
 - **Shares journeys live.** Trusted contacts get a link that shows your position, route, battery and status. No app or account is needed to view it.
 - **Monitors cab and auto rides.** It records the number plate, then watches for detours, long unexplained stops and late arrival.
 - **Checks in, then escalates.** If you leave the route, stop for too long or run late, it asks "Are you OK?". If you don't answer within 60 seconds, it raises an SOS automatically.
-- **Sends SOS that works offline.** One hold opens a ready-to-send SMS to all contacts with your coordinates and live link. SMS needs no mobile data. There's also WhatsApp, one-tap 112, a loud alarm, and an optional automatic SMS gateway (Twilio or MSG91).
+- **Sends SOS automatically, the moment you need it.** Hold the red SOS button for one second (or shake the phone) and, with nothing more to tap:
+  - every trusted contact who opened their one-time invite link gets an instant alert on their phone (free Web Push) or on Telegram, with your live location;
+  - in the Android app, an SMS goes to every contact straight from your SIM, even with no internet;
+  - the SOS screen shows who was reached, over which channel, and who has opened your alert.
+
+  One-tap SMS and WhatsApp, a call to 112, a loud alarm and a **practice mode** that sends nothing are on the same screen. A paid SMS gateway (Twilio or MSG91) is optional.
 - **Takes crowdsourced reports.** Harassment, snatching, poor lighting, stray dogs and more. Reports fade over time, gain weight when others confirm them, and are hidden when flagged.
-- **Shake to SOS** (opt-in): shaking the phone hard starts a 5-second cancellable SOS countdown.
+- **Shake to SOS** (opt-in): shaking the phone hard sends SOS, after a countdown you choose (instant, 3, 5 or 10 s). In the Android app it works with the screen locked.
+- **Safety setup checklist** that walks new users through contacts, instant alerts, location, shake to SOS and a practice SOS.
+- **Light and dark themes**, large touch targets, visible focus and WCAG AA contrast throughout.
 - **Fake incoming call** with a ringtone, vibration and a voice on the line, for leaving an uncomfortable situation.
 - **Shows nearby help and emergency numbers.** The nearest police stations, hospitals and 24-hour pharmacies, each with a one-tap safe route, plus India's emergency numbers (112, 1091, 181, 108, 1098, 1930).
-- **Web, PWA and native app.** One codebase runs in any browser, installs as a PWA, and ships as an Android/iOS app ([docs/NATIVE_APP.md](docs/NATIVE_APP.md)) that keeps tracking with the screen locked.
+- **Web, PWA and native app.** One codebase runs in any browser, installs as a PWA, and ships as an Android app that keeps tracking with the screen locked, texts contacts automatically and offers "Send SOS" from the home-screen icon. Every push to `main` builds the APK: [download the latest](https://github.com/Pulkitkh/SafetyNavigationSystem/releases/latest/download/SafeNav.apk). See [docs/NATIVE_APP.md](docs/NATIVE_APP.md).
 
 ## Why a PWA
 
