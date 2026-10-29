@@ -245,17 +245,22 @@ export function EmptyState({ icon, title, text, action }: { icon: LucideIcon; ti
 export function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  // Parents pass a new onClose on every render; reading it from a ref keeps the
+  // effect below to open/close only. Re-running it per keystroke moved focus away
+  // from the field being typed in, which closed the phone keyboard.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     if (!open) return;
     const prev = document.activeElement as HTMLElement | null;
     ref.current?.querySelector<HTMLElement>("input, select, textarea, button")?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeRef.current();
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
       prev?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[90] flex items-end justify-center md:items-center" role="dialog" aria-modal="true" aria-labelledby={titleId}>
