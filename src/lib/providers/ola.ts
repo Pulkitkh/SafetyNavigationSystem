@@ -82,14 +82,16 @@ export function olaToPlace(p: OlaPrediction, near?: LngLat): Place | null {
   const label = p.structured_formatting?.main_text || p.name || p.description?.split(",")[0];
   if (!label) return null;
   const full = p.structured_formatting?.secondary_text || p.formatted_address || p.description || "";
-  // Ola often repeats the name in short form ("56 Dukan St" after "56 Dukan Street") and repeats localities.
+  // Ola often repeats the name in short form ("56 Dukan St" after "56 Dukan Street"), repeats localities,
+  // and leads with house and unit numbers or a stray "Rd", none of which help pick a place.
   const seen = new Set<string>();
   const detail = full
     .split(",")
-    .map((s) => s.trim())
+    .map((s) => s.replace(/\s+\d{6}$/, "").trim())
     .filter((s) => {
       const key = s.toLowerCase();
-      if (!s || seen.has(key) || label.toLowerCase().startsWith(key) || /^india$/i.test(s) || /^\d{6}$/.test(s)) return false;
+      if (!s || seen.has(key) || label.toLowerCase().startsWith(key) || /^india$/i.test(s)) return false;
+      if (/^[\d\s/-]+[a-z]?$/i.test(s) || /^(st|rd|ln|road|street|marg)$/i.test(s) || /^(unit|shop|flat|plot|house)\b|^no\.?\s/i.test(s)) return false;
       seen.add(key);
       return true;
     })

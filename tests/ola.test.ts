@@ -17,7 +17,7 @@ describe("Ola Maps predictions", () => {
       },
       indore,
     );
-    expect(p).toMatchObject({ label: "56 Dukan", detail: "New Palasia, Indore, Madhya Pradesh 452001", source: "ola", kind: "Food" });
+    expect(p).toMatchObject({ label: "56 Dukan", detail: "New Palasia, Indore, Madhya Pradesh", source: "ola", kind: "Food" });
     expect(p!.distance).toBeLessThan(3000);
   });
 
@@ -28,6 +28,11 @@ describe("Ola Maps predictions", () => {
       types: ["street_address"],
     });
     expect(p!.detail).toBe("New Palasia, Indore, Madhya Pradesh");
+    const q = olaToPlace({
+      structured_formatting: { main_text: "Charminar", secondary_text: "Rd, 16-113, Unit No F-55, Char Kaman, Hyderabad, Telangana 500002" },
+      geometry: { location: { lat: 17.36, lng: 78.47 } },
+    });
+    expect(q!.detail).toBe("Char Kaman, Hyderabad, Telangana");
   });
 
   it("reads text-search-style results and drops ones without coordinates", () => {
