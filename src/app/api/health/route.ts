@@ -35,6 +35,7 @@ export const GET = route(async (req: NextRequest) => {
     "SOS alerts on Telegram": on(telegramEnabled()),
     "SOS alerts on WhatsApp": on(whatsappEnabled()),
     "SOS ringing in the app (Firebase)": on(fcmEnabled()),
+    "Watchdog kept awake (CRON_SECRET)": on(!!process.env.CRON_SECRET?.trim()),
     "SOS SMS gateway": on(!!smsProvider()),
   };
   return json({ ok: healthy, database, services, optional, probes, checkedAt: new Date().toISOString() }, healthy ? 200 : 503);

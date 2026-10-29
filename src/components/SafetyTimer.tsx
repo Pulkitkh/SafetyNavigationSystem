@@ -3,8 +3,9 @@
 import { Timer } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSos } from "@/components/Sos";
+import { api } from "@/lib/client/api";
 import { store, type SafetyTimer } from "@/lib/client/store";
 import { speak } from "@/lib/client/voice";
 import { CHECKIN_TIMEOUT_S } from "@/lib/monitor";
@@ -41,6 +42,20 @@ export function SafetyTimerWatch() {
   const sos = useSos();
   const path = usePathname();
   const [now, setNow] = useState(Date.now());
+
+  // Mirror the timer on the server, which raises the SOS if this phone is
+  // switched off or SafeNav is closed when it runs out. Signed out, this fails quietly.
+  const synced = useRef<number | null | undefined>(undefined);
+  useEffect(() => {
+    const endsAt = timer?.endsAt ?? null;
+    if (synced.current === endsAt || (synced.current === undefined && endsAt === null)) {
+      synced.current = endsAt;
+      return;
+    }
+    synced.current = endsAt;
+    if (timer) void api("/api/me/timer", { method: "PUT", json: { endsAt: timer.endsAt, note: timer.note || undefined } }).catch(() => {});
+    else void api("/api/me/timer", { method: "DELETE" }).catch(() => {});
+  }, [timer]);
 
   useEffect(() => {
     if (!timer) return;

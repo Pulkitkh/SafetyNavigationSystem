@@ -4,6 +4,7 @@ import { BellRing, Check, CircleAlert, Eye, MapPin, Navigation, PhoneCall, Radio
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertsCard } from "@/components/AlertsCard";
 import Map, { type MapMarker } from "@/components/Map";
 import { useSos } from "@/components/Sos";
 import { Callout, EmptyState } from "@/components/ui";
@@ -18,6 +19,7 @@ import type { PlanResult } from "@/lib/safety/plan";
 import { detectPlatform, journeyMessage, smsUri, whatsappUri } from "@/lib/sos";
 
 const PUSH_EVERY_MS = 10_000;
+const HEARTBEAT_MS = 60_000;
 
 export default function JourneyPage() {
   const router = useRouter();
@@ -168,16 +170,21 @@ function ActiveJourneyView({
     [journey.tripId],
   );
 
-  // Push location to the server for the live link.
+  // Push location to the server for the live link. Standing still, the phone may
+  // report no new fix for minutes, so the last one is resent as a heartbeat: the
+  // server warns contacts when it stops hearing from the phone.
+  const heartbeat = Math.floor(now / HEARTBEAT_MS);
   useEffect(() => {
     const f = geo.fix;
     if (!f || Date.now() - lastPush.current < PUSH_EVERY_MS) return;
+    const stale = Date.now() - f.at > HEARTBEAT_MS;
+    if (stale && Date.now() - lastPush.current < HEARTBEAT_MS) return;
     lastPush.current = Date.now();
     (async () => {
       try {
         await api(`/api/trips/${journey.tripId}/location`, {
           method: "POST",
-          json: { lat: f.lat, lng: f.lng, accuracy: Math.min(f.accuracy, 10_000), battery: await batteryLevel(), at: f.at },
+          json: { lat: f.lat, lng: f.lng, accuracy: Math.min(f.accuracy, 10_000), battery: await batteryLevel(), at: stale ? undefined : f.at },
         });
         setOffline(false);
       } catch (err) {
@@ -185,7 +192,7 @@ function ActiveJourneyView({
         if ((err as { status?: number }).status === 409) onEnded(); // ended elsewhere
       }
     })();
-  }, [geo.fix, journey.tripId, onEnded]);
+  }, [geo.fix, heartbeat, journey.tripId, onEnded]);
 
   // Evaluate monitoring rules on every fix and once a second (for the overdue timer).
   useEffect(() => {
@@ -429,9 +436,11 @@ function ActiveJourneyView({
           <p className="mt-2.5 text-[13px]">
             {nativeApp
               ? "Tracking continues with the screen locked while the SafeNav notification is showing."
-              : "Keep this screen open: browsers pause location in the background. The SafeNav app keeps tracking with the screen locked."}
+              : "Keep this screen open: browsers pause location in the background. If SafeNav stops hearing from your phone, it reminds you, then tells your contacts after 15 minutes; if you're overdue and don't answer, it alerts them for you."}
           </p>
         </div>
+
+        <AlertsCard compact />
 
         {confirmEnd ? (
           <div className="grid grid-cols-2 gap-2">

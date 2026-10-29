@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, or } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { sha256 } from "@/lib/server/auth";
 import { ApiError, json, rateLimit, route } from "@/lib/server/http";
@@ -18,7 +18,7 @@ export const GET = route(async (req: NextRequest, { params }: Ctx) => {
     .select({ trip: schema.trips, name: schema.users.name, phone: schema.users.phone })
     .from(schema.trips)
     .innerJoin(schema.users, eq(schema.users.id, schema.trips.userId))
-    .where(eq(schema.trips.shareTokenHash, sha256(token)))
+    .where(or(eq(schema.trips.shareTokenHash, sha256(token)), eq(schema.trips.serverTokenHash, sha256(token))))
     .limit(1);
   if (!row || !isShareVisible(row.trip)) throw new ApiError(404, "This link has expired or is not valid");
   const t = row.trip;

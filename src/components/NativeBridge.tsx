@@ -8,6 +8,7 @@ import { api } from "@/lib/client/api";
 // Registers Chrome's install-app event listener on every page, before any page asks for it.
 import "@/lib/client/install";
 import { nativeSos, registerAppDevice, sendToken } from "@/lib/client/native";
+import { syncWebPush } from "@/lib/client/push";
 import { store } from "@/lib/client/store";
 
 /**
@@ -51,6 +52,12 @@ export function NativeBridge() {
       void sub.then((h) => h.remove());
     };
   }, [me]);
+
+  // In a browser or the installed web app, notifications this browser allowed go to whoever is signed in now.
+  const meId = me?.id;
+  useEffect(() => {
+    if (meId && !nativeSos()) void syncWebPush();
+  }, [meId]);
 
   useEffect(() => {
     void nativeSos()

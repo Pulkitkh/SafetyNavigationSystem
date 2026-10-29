@@ -11,6 +11,10 @@
  *   invite link. Business-initiated messages must use a template Meta has
  *   approved, and Meta bills each one (about ₹0.12 for a utility message in India).
  *
+ * - The SafeNav app itself, for contacts who linked their account: a ringing
+ *   alarm in the Android app (Firebase), or a notification in the installed
+ *   web app (Web Push), both of which arrive with the app closed.
+ *
  * Paid SMS gateways (sms.ts) and the phone's own SMS (native app) run alongside.
  */
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
@@ -19,7 +23,8 @@ import webpush from "web-push";
 import { getDb, schema } from "@/lib/db";
 import { sendFcm } from "./fcm";
 
-export type AlertKind = "sos" | "safe" | "journey" | "test";
+/** warning: the server lost touch with someone or they're overdue. checkin: "Are you OK?" to the user themselves. */
+export type AlertKind = "sos" | "safe" | "journey" | "warning" | "checkin" | "test";
 
 export interface AlertPayload {
   kind: AlertKind;
@@ -77,15 +82,18 @@ export function withDevice(url: string | null, deviceId: string) {
   return `${url}${url.includes("?") ? "&" : "?"}g=${encodeURIComponent(deviceId)}`;
 }
 
-async function sendPush(device: typeof schema.guardianDevices.$inferSelect, p: AlertPayload): Promise<{ ok: boolean; gone?: boolean; error?: string }> {
+const PUSH_TTL_S: Record<AlertKind, number> = { sos: 3600, safe: 3600, journey: 4 * 3600, warning: 3600, checkin: 600, test: 3600 };
+
+/** Sends one Web Push message; `keys` is the subscription's JSON {p256dh, auth}. */
+async function webPush(endpoint: string, keysJson: string | null, url: string | null, p: AlertPayload): Promise<{ ok: boolean; gone?: boolean; error?: string }> {
   if (!pushEnabled()) return { ok: false, error: "push not configured" };
   try {
-    const keys = JSON.parse(device.keys ?? "{}") as { p256dh?: string; auth?: string };
+    const keys = JSON.parse(keysJson ?? "{}") as { p256dh?: string; auth?: string };
     await webpush.sendNotification(
-      { endpoint: device.address, keys: { p256dh: keys.p256dh ?? "", auth: keys.auth ?? "" } },
-      JSON.stringify({ kind: p.kind, title: p.title, body: p.body, url: withDevice(p.url, device.id), tag: `${p.kind}-${p.tripId}` }),
+      { endpoint, keys: { p256dh: keys.p256dh ?? "", auth: keys.auth ?? "" } },
+      JSON.stringify({ kind: p.kind, title: p.title, body: p.body, url, tag: `${p.kind}-${p.tripId}` }),
       // SOS is time-critical: deliver now and don't hold it for later than an hour.
-      { TTL: p.kind === "journey" ? 4 * 3600 : 3600, urgency: p.kind === "journey" ? "normal" : "high", timeout: 10_000 },
+      { TTL: PUSH_TTL_S[p.kind], urgency: p.kind === "journey" ? "normal" : "high", timeout: 10_000 },
     );
     return { ok: true };
   } catch (err) {
@@ -93,6 +101,10 @@ async function sendPush(device: typeof schema.guardianDevices.$inferSelect, p: A
     // 404/410: the contact uninstalled the app or revoked notifications.
     return { ok: false, gone: status === 404 || status === 410, error: status ? `push service HTTP ${status}` : (err as Error).message };
   }
+}
+
+function sendPush(device: typeof schema.guardianDevices.$inferSelect, p: AlertPayload) {
+  return webPush(device.address, device.keys, withDevice(p.url, device.id), p);
 }
 
 // ---------------------------------------------------------------- Telegram
@@ -194,6 +206,8 @@ const HEADLINE: Record<AlertKind, (title: string) => string> = {
   sos: (t) => `🚨 ${t}`,
   safe: (t) => `✅ ${t}`,
   journey: (t) => t,
+  warning: (t) => `⚠️ ${t}`,
+  checkin: (t) => t,
   test: (t) => t,
 };
 
@@ -266,15 +280,26 @@ async function sendWhatsApp(device: typeof schema.guardianDevices.$inferSelect, 
 /** Alerts every linked device of the given contacts in parallel and records each outcome. */
 type Channel = DeliveryResult["channel"];
 
-/** Rings a SafeNav app install with a data message; the app shows the alert itself (full screen for SOS). */
-async function sendApp(token: string, p: AlertPayload) {
-  const base = process.env.APP_URL?.replace(/\/+$/, "") ?? "";
-  return sendFcm(token, {
+/** Where links in alerts point; the watchdog has no request to read it from. */
+export function baseUrl() {
+  return (process.env.APP_URL?.trim() || process.env.RENDER_EXTERNAL_URL?.trim() || "").replace(/\/+$/, "");
+}
+
+/**
+ * Alerts one SafeNav app install. Android: a Firebase data message; the app
+ * shows the alert itself (an alarm for SOS). Installed web app: Web Push.
+ */
+async function sendApp(app: typeof schema.appDevices.$inferSelect, p: AlertPayload) {
+  const base = baseUrl();
+  const url = p.personUserId ? `${base}/people/${p.personUserId}` : (p.url ?? `${base}/`);
+  // Opening the person's page marks the alert seen, so the link needs no device id.
+  if (app.platform === "web") return webPush(app.token, app.keys, url, p);
+  return sendFcm(app.token, {
     kind: p.kind,
     title: p.title,
     body: p.body,
     tripId: p.tripId,
-    url: p.personUserId ? `${base}/people/${p.personUserId}` : (p.url ?? base),
+    url,
     ...(p.personUserId ? { personUserId: p.personUserId } : {}),
     ...(p.lat != null && p.lng != null ? { lat: String(p.lat), lng: String(p.lng) } : {}),
   });
@@ -317,8 +342,12 @@ export async function alertContacts(
     Promise.all(
       apps.flatMap((a) =>
         linked
-          .filter((l) => l.userId === a.userId)
-          .map(async (l) => ({ app: a, contactId: l.contactId, deviceId: `app:${createHash("sha256").update(a.token).digest("hex").slice(0, 16)}`, ...(await sendApp(a.token, payload)) })),
+          // A browser that also subscribed from the invite link gets the alert that way already.
+          .filter((l) => l.userId === a.userId && !(a.platform === "web" && devices.some((d) => d.kind === "push" && d.contactId === l.contactId && d.address === a.token)))
+          .map(async (l) => {
+            const deviceId = appDeviceId(a.token);
+            return { app: a, contactId: l.contactId, deviceId, ...(await sendApp(a, payload)) };
+          }),
       ),
     ),
   ]);
@@ -339,7 +368,7 @@ export async function alertContacts(
 
   const all: DeliveryResult[] = [
     ...results.map((r) => ({ contactId: r.device.contactId, deviceId: r.device.id, channel: r.device.kind, ok: r.ok, error: r.error })),
-    ...appResults.map((r) => ({ contactId: r.contactId, deviceId: r.deviceId, channel: "fcm" as const, ok: r.ok, error: r.error })),
+    ...appResults.map((r) => ({ contactId: r.contactId, deviceId: r.deviceId, channel: r.app.platform === "web" ? ("push" as const) : ("fcm" as const), ok: r.ok, error: r.error })),
   ];
   if (opts.record !== false && all.length) {
     await db.insert(schema.alertDeliveries).values(
@@ -355,6 +384,20 @@ export async function alertContacts(
     );
   }
   return all;
+}
+
+export function appDeviceId(token: string) {
+  return `app:${createHash("sha256").update(token).digest("hex").slice(0, 16)}`;
+}
+
+/** Alerts the user's own phones and browsers, e.g. "Are you OK?" when the server sees a journey overdue. */
+export async function alertSelf(userId: string, payload: AlertPayload): Promise<number> {
+  const db = await getDb();
+  const apps = await db.select().from(schema.appDevices).where(eq(schema.appDevices.userId, userId));
+  const results = await Promise.all(apps.map(async (a) => ({ app: a, ...(await sendApp(a, payload)) })));
+  const gone = results.filter((r) => r.gone).map((r) => r.app.token);
+  if (gone.length) await db.delete(schema.appDevices).where(inArray(schema.appDevices.token, gone));
+  return results.filter((r) => r.ok).length;
 }
 
 /** Re-alert schedule for an SOS nobody has opened yet (seconds after the first alert). */

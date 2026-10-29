@@ -24,6 +24,11 @@ export const PATCH = route(async (req: NextRequest, { params }: Ctx) => {
       status: input.status,
       alertReason: input.status === "alert" ? (input.reason ?? "Check-in pending") : input.status === "ended" ? (input.reason ?? null) : null,
       endedAt: input.status === "ended" ? new Date() : null,
+      // "I'm OK" answers the server's check-in too. An overdue journey starts its
+      // overdue grace again from now, so the server doesn't ask straight away.
+      ...(input.status === "active"
+        ? { checkinSentAt: null, overdueAlertedAt: null, ...(trip.expectedArrival.getTime() < Date.now() ? { expectedArrival: new Date() } : {}) }
+        : {}),
     })
     .where(eq(schema.trips.id, id));
   // Everyone who got the SOS automatically also hears, automatically, that it's over.

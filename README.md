@@ -103,7 +103,8 @@ The database schema is created automatically on first use (`data/safenav.db`). L
 
 1. Create a Supabase project in the same region as the server. For least privilege, create a login role that owns a `safenav` schema and can connect to the database (see `scripts/` history or run the SQL in the Supabase SQL editor).
 2. Set `DATABASE_URL` on Render to the **Session pooler** URL (`postgresql://<role>.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres`). Render can't reach Supabase's IPv6-only direct host.
-3. Set `APP_URL`, `OSM_CONTACT_EMAIL` and the optional alert settings. Deploy. Tables are created and upgraded on start.
+3. Set `APP_URL`, `OSM_CONTACT_EMAIL`, `CRON_SECRET` and the optional alert settings. Deploy. Tables are created and upgraded on start.
+4. Schedule the watchdog every minute with Supabase's `pg_cron` and `pg_net` ([docs/BACKGROUND_ALERTS.md](docs/BACKGROUND_ALERTS.md)). A free Render server sleeps after 15 idle minutes, and a sleeping server can't send alerts; the scheduled call keeps it awake.
 
 **Any Node host or VPS:** run `npm run build && npm start` with `DATABASE_URL` pointing at any Postgres 14+, or `file:/path/to/folder` on a persistent disk to use the built-in PGlite.
 

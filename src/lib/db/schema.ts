@@ -123,10 +123,23 @@ export const trips = safenav.table(
     lastBattery: doublePrecision("last_battery"),
     lastSeenAt: ts("last_seen_at"),
     alertReason: text("alert_reason"),
+    // A second share token the server makes when it raises an alert itself,
+    // because it only stores the hash of the one the phone made.
+    serverTokenHash: text("server_token_hash"),
+    // Server watchdog progress, so each step happens once (see watchdog.ts).
+    nudgedAt: ts("nudged_at"),
+    lostNotifiedAt: ts("lost_notified_at"),
+    checkinSentAt: ts("checkin_sent_at"),
+    overdueAlertedAt: ts("overdue_alerted_at"),
     startedAt: ts("created_at").notNull().defaultNow(),
     endedAt: ts("ended_at"),
   },
-  (t) => [uniqueIndex("trips_share_idx").on(t.shareTokenHash), index("trips_user_idx").on(t.userId, t.status)],
+  (t) => [
+    uniqueIndex("trips_share_idx").on(t.shareTokenHash),
+    index("trips_server_share_idx").on(t.serverTokenHash),
+    index("trips_user_idx").on(t.userId, t.status),
+    index("trips_status_idx").on(t.status),
+  ],
 );
 
 export const tripPoints = safenav.table(
@@ -198,7 +211,7 @@ export const guardianDevices = safenav.table(
   (t) => [uniqueIndex("guardian_devices_addr_idx").on(t.contactId, t.kind, t.address), index("guardian_devices_contact_idx").on(t.contactId)],
 );
 
-/** Phones where a signed-in user runs the SafeNav app, so an SOS from someone they protect can ring them. */
+/** Phones and browsers where a signed-in user gets SafeNav alerts: SOS from people they protect, and their own check-ins. */
 export const appDevices = safenav.table(
   "app_devices",
   {
@@ -206,11 +219,27 @@ export const appDevices = safenav.table(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    // android | ios (Firebase token) | web (push endpoint, with its keys).
     platform: text("platform").notNull(),
+    keys: text("keys"),
     updatedAt: ts("updated_at").notNull().defaultNow(),
   },
   (t) => [index("app_devices_user_idx").on(t.userId)],
 );
+
+/**
+ * A running safety timer, kept on the server too, so the SOS still goes out
+ * when the phone is switched off, out of battery or has the app closed.
+ */
+export const safetyTimers = safenav.table("safety_timers", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  endsAt: ts("ends_at").notNull(),
+  note: text("note"),
+  checkinSentAt: ts("checkin_sent_at"),
+  createdAt: createdAt(),
+});
 
 /** One alert sent to one contact over one channel, so the person in danger can see who was reached. */
 export const alertDeliveries = safenav.table(

@@ -4,6 +4,7 @@ import { getDb, schema } from "@/lib/db";
 import { ApiError, json, parseBody, rateLimit, requireUser, route } from "@/lib/server/http";
 import { recordLive } from "@/lib/server/people";
 import { ownedTrip, pruneTripPoints } from "@/lib/server/trips";
+import { backInTouch } from "@/lib/server/watchdog";
 import { locationInput } from "@/lib/server/validation";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -34,6 +35,8 @@ export const POST = route(async (req: NextRequest, { params }: Ctx) => {
     // Keep always-on sharing current during a journey too.
     if (user.shareLive) await recordLive(user.id, { lat: input.lat, lng: input.lng, accuracy: input.accuracy, battery: input.battery, at: recordedAt });
   }
+  // The phone is back after the watchdog flagged it quiet.
+  if (trip.nudgedAt || trip.lostNotifiedAt) await backInTouch(trip, user).catch((err) => console.error(`[trips] back in touch: ${(err as Error).message}`));
   if (Math.random() < 0.05) await pruneTripPoints(id);
   return json({ ok: true, status: trip.status });
 });

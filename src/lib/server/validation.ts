@@ -128,22 +128,22 @@ export const rerouteInput = z.object({
 /** Browser push services we deliver to. Anything else is refused, so a subscription can't make the server call arbitrary URLs. */
 const PUSH_HOSTS = /^(fcm\.googleapis\.com|android\.googleapis\.com|([a-z0-9-]+\.)*push\.services\.mozilla\.com|web\.push\.apple\.com|([a-z0-9-]+\.)*notify\.windows\.com)$/;
 
+const pushEndpoint = z
+  .string()
+  .url()
+  .max(1000)
+  .refine((u) => {
+    try {
+      const url = new URL(u);
+      return url.protocol === "https:" && PUSH_HOSTS.test(url.hostname);
+    } catch {
+      return false;
+    }
+  }, "Unsupported push service");
+const pushKeys = z.object({ p256dh: z.string().min(10).max(200), auth: z.string().min(8).max(100) });
+
 export const pushSubscriptionInput = z.object({
-  subscription: z.object({
-    endpoint: z
-      .string()
-      .url()
-      .max(1000)
-      .refine((u) => {
-        try {
-          const url = new URL(u);
-          return url.protocol === "https:" && PUSH_HOSTS.test(url.hostname);
-        } catch {
-          return false;
-        }
-      }, "Unsupported push service"),
-    keys: z.object({ p256dh: z.string().min(10).max(200), auth: z.string().min(8).max(100) }),
-  }),
+  subscription: z.object({ endpoint: pushEndpoint, keys: pushKeys }),
   label: z.string().trim().max(60).optional(),
 });
 
@@ -156,8 +156,19 @@ export const inviteToken = z.string().regex(/^[A-Za-z0-9_-]{22,64}$/);
 /** A trusted contact's answer to an SOS. */
 export const sosResponseInput = z.object({ response: z.enum(["on_my_way", "calling", "called_112"]) });
 
-/** A SafeNav app install that should ring when someone you protect raises an SOS. */
-export const appDeviceInput = z.object({
-  token: z.string().min(20).max(4096),
-  platform: z.enum(["android", "ios"]),
+/**
+ * A SafeNav install that gets alerts for this account: the Android app's
+ * Firebase token, or the installed web app's push subscription.
+ */
+export const appDeviceInput = z.discriminatedUnion("platform", [
+  z.object({ platform: z.enum(["android", "ios"]), token: z.string().min(20).max(4096) }),
+  z.object({ platform: z.literal("web"), token: pushEndpoint, keys: pushKeys }),
+]);
+
+export const appDeviceRemoveInput = z.object({ token: z.string().min(20).max(4096) });
+
+/** A safety timer mirrored to the server, which raises the SOS if the phone can't. */
+export const safetyTimerInput = z.object({
+  endsAt: z.number().int().positive(),
+  note: z.string().trim().max(120).optional(),
 });

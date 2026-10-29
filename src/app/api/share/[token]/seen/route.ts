@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { markSeen } from "@/lib/server/alerts";
 import { sha256 } from "@/lib/server/auth";
@@ -15,7 +15,7 @@ export const POST = route(async (req: NextRequest, { params }: Ctx) => {
   if (!shareToken.safeParse(token).success) throw new ApiError(404, "This link is not valid");
   const { g } = await parseBody(req, seenInput);
   const db = await getDb();
-  const trip = await db.query.trips.findFirst({ where: eq(schema.trips.shareTokenHash, sha256(token)), columns: { id: true } });
+  const trip = await db.query.trips.findFirst({ where: or(eq(schema.trips.shareTokenHash, sha256(token)), eq(schema.trips.serverTokenHash, sha256(token))), columns: { id: true } });
   if (!trip) throw new ApiError(404, "This link is not valid");
   await markSeen(trip.id, g);
   return json({ ok: true });

@@ -5,12 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/Nav";
+import { AlertsCard } from "@/components/AlertsCard";
 import { ShareLiveCard } from "@/components/ShareLiveCard";
 import { initials } from "@/components/Sos";
 import { Callout, EmptyState, ListRow, Toggle } from "@/components/ui";
 import { api } from "@/lib/client/api";
 import { useSession } from "@/lib/client/hooks";
 import { unregisterAppDevice } from "@/lib/client/native";
+import { unregisterWebPush } from "@/lib/client/push";
 import { store } from "@/lib/client/store";
 
 export default function AccountPage() {
@@ -64,7 +66,7 @@ export default function AccountPage() {
   };
 
   const logout = async () => {
-    await unregisterAppDevice();
+    await Promise.all([unregisterAppDevice(), unregisterWebPush()]);
     await api("/api/auth/logout", { method: "POST" }).catch(() => {});
     store.setJourney(null);
     store.setContacts([]);
@@ -113,6 +115,8 @@ export default function AccountPage() {
           </button>
           {msg && <Callout tone={msg.ok ? "good" : "danger"}>{msg.text}</Callout>}
         </form>
+
+        <AlertsCard />
 
         <ShareLiveCard />
 

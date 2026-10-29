@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS "safenav"."app_devices" (
 	"token" text PRIMARY KEY NOT NULL,
 	"user_id" text NOT NULL,
 	"platform" text NOT NULL,
+	"keys" text,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 CREATE TABLE IF NOT EXISTS "safenav"."contacts" (
@@ -70,6 +71,13 @@ CREATE TABLE IF NOT EXISTS "safenav"."reports" (
 	"upvotes" integer DEFAULT 0 NOT NULL,
 	"flags" integer DEFAULT 0 NOT NULL,
 	"hidden" boolean DEFAULT false NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+CREATE TABLE IF NOT EXISTS "safenav"."safety_timers" (
+	"user_id" text PRIMARY KEY NOT NULL,
+	"ends_at" timestamp with time zone NOT NULL,
+	"note" text,
+	"checkin_sent_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 CREATE TABLE IF NOT EXISTS "safenav"."sessions" (
@@ -125,6 +133,11 @@ CREATE TABLE IF NOT EXISTS "safenav"."trips" (
 	"last_battery" double precision,
 	"last_seen_at" timestamp with time zone,
 	"alert_reason" text,
+	"server_token_hash" text,
+	"nudged_at" timestamp with time zone,
+	"lost_notified_at" timestamp with time zone,
+	"checkin_sent_at" timestamp with time zone,
+	"overdue_alerted_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"ended_at" timestamp with time zone
 );
@@ -159,6 +172,7 @@ ALTER TABLE "safenav"."api_cache" ADD COLUMN IF NOT EXISTS "expires_at" timestam
 ALTER TABLE "safenav"."app_devices" ADD COLUMN IF NOT EXISTS "token" text;
 ALTER TABLE "safenav"."app_devices" ADD COLUMN IF NOT EXISTS "user_id" text;
 ALTER TABLE "safenav"."app_devices" ADD COLUMN IF NOT EXISTS "platform" text;
+ALTER TABLE "safenav"."app_devices" ADD COLUMN IF NOT EXISTS "keys" text;
 ALTER TABLE "safenav"."app_devices" ADD COLUMN IF NOT EXISTS "updated_at" timestamp with time zone DEFAULT now() NOT NULL;
 ALTER TABLE "safenav"."contacts" ADD COLUMN IF NOT EXISTS "id" text;
 ALTER TABLE "safenav"."contacts" ADD COLUMN IF NOT EXISTS "user_id" text;
@@ -193,6 +207,11 @@ ALTER TABLE "safenav"."reports" ADD COLUMN IF NOT EXISTS "upvotes" integer DEFAU
 ALTER TABLE "safenav"."reports" ADD COLUMN IF NOT EXISTS "flags" integer DEFAULT 0 NOT NULL;
 ALTER TABLE "safenav"."reports" ADD COLUMN IF NOT EXISTS "hidden" boolean DEFAULT false NOT NULL;
 ALTER TABLE "safenav"."reports" ADD COLUMN IF NOT EXISTS "created_at" timestamp with time zone DEFAULT now() NOT NULL;
+ALTER TABLE "safenav"."safety_timers" ADD COLUMN IF NOT EXISTS "user_id" text;
+ALTER TABLE "safenav"."safety_timers" ADD COLUMN IF NOT EXISTS "ends_at" timestamp with time zone;
+ALTER TABLE "safenav"."safety_timers" ADD COLUMN IF NOT EXISTS "note" text;
+ALTER TABLE "safenav"."safety_timers" ADD COLUMN IF NOT EXISTS "checkin_sent_at" timestamp with time zone;
+ALTER TABLE "safenav"."safety_timers" ADD COLUMN IF NOT EXISTS "created_at" timestamp with time zone DEFAULT now() NOT NULL;
 ALTER TABLE "safenav"."sessions" ADD COLUMN IF NOT EXISTS "token_hash" text;
 ALTER TABLE "safenav"."sessions" ADD COLUMN IF NOT EXISTS "user_id" text;
 ALTER TABLE "safenav"."sessions" ADD COLUMN IF NOT EXISTS "expires_at" timestamp with time zone;
@@ -236,6 +255,11 @@ ALTER TABLE "safenav"."trips" ADD COLUMN IF NOT EXISTS "last_accuracy" double pr
 ALTER TABLE "safenav"."trips" ADD COLUMN IF NOT EXISTS "last_battery" double precision;
 ALTER TABLE "safenav"."trips" ADD COLUMN IF NOT EXISTS "last_seen_at" timestamp with time zone;
 ALTER TABLE "safenav"."trips" ADD COLUMN IF NOT EXISTS "alert_reason" text;
+ALTER TABLE "safenav"."trips" ADD COLUMN IF NOT EXISTS "server_token_hash" text;
+ALTER TABLE "safenav"."trips" ADD COLUMN IF NOT EXISTS "nudged_at" timestamp with time zone;
+ALTER TABLE "safenav"."trips" ADD COLUMN IF NOT EXISTS "lost_notified_at" timestamp with time zone;
+ALTER TABLE "safenav"."trips" ADD COLUMN IF NOT EXISTS "checkin_sent_at" timestamp with time zone;
+ALTER TABLE "safenav"."trips" ADD COLUMN IF NOT EXISTS "overdue_alerted_at" timestamp with time zone;
 ALTER TABLE "safenav"."trips" ADD COLUMN IF NOT EXISTS "created_at" timestamp with time zone DEFAULT now() NOT NULL;
 ALTER TABLE "safenav"."trips" ADD COLUMN IF NOT EXISTS "ended_at" timestamp with time zone;
 ALTER TABLE "safenav"."users" ADD COLUMN IF NOT EXISTS "id" text;
@@ -292,6 +316,10 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
 END $$;
 DO $$ BEGIN
+  ALTER TABLE "safenav"."safety_timers" ADD CONSTRAINT "safety_timers_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "safenav"."users"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
+END $$;
+DO $$ BEGIN
   ALTER TABLE "safenav"."sessions" ADD CONSTRAINT "sessions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "safenav"."users"("id") ON DELETE cascade ON UPDATE no action;
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
 END $$;
@@ -331,6 +359,8 @@ CREATE INDEX IF NOT EXISTS "sessions_user_idx" ON "safenav"."sessions" USING btr
 CREATE INDEX IF NOT EXISTS "sos_user_idx" ON "safenav"."sos_events" USING btree ("user_id");
 CREATE INDEX IF NOT EXISTS "trip_points_trip_idx" ON "safenav"."trip_points" USING btree ("trip_id","recorded_at");
 CREATE UNIQUE INDEX IF NOT EXISTS "trips_share_idx" ON "safenav"."trips" USING btree ("share_token_hash");
+CREATE INDEX IF NOT EXISTS "trips_server_share_idx" ON "safenav"."trips" USING btree ("server_token_hash");
 CREATE INDEX IF NOT EXISTS "trips_user_idx" ON "safenav"."trips" USING btree ("user_id","status");
+CREATE INDEX IF NOT EXISTS "trips_status_idx" ON "safenav"."trips" USING btree ("status");
 CREATE UNIQUE INDEX IF NOT EXISTS "users_email_idx" ON "safenav"."users" USING btree ("email");
 `;

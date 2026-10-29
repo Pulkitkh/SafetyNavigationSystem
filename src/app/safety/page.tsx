@@ -3,6 +3,7 @@
 import { Check, ChevronRight, Download, Info, LifeBuoy, MessageSquareWarning, PhoneCall, PlayCircle, ScanSearch, ShieldCheck, Timer, UserRound, Users, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { DeviceSettings } from "@/components/DeviceSettings";
+import { AlertsCard } from "@/components/AlertsCard";
 import { PageHeader } from "@/components/Nav";
 import { useSafetyTimer } from "@/components/SafetyTimer";
 import { ShareLiveCard } from "@/components/ShareLiveCard";
@@ -89,6 +90,8 @@ export default function SafetyPage() {
             ))}
           </ul>
         </section>
+
+        <AlertsCard />
 
         <ShareLiveCard />
 

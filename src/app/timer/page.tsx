@@ -3,6 +3,7 @@
 import { Check, Timer, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { AlertsCard } from "@/components/AlertsCard";
 import { PageHeader } from "@/components/Nav";
 import { Callout } from "@/components/ui";
 import { formatClock, useSafetyTimer } from "@/components/SafetyTimer";
@@ -61,8 +62,10 @@ export default function TimerPage() {
               ))}
             </div>
           </div>
+          <AlertsCard compact />
           <p className="px-1 text-[13px] text-ink-3">
-            Keep SafeNav open: browsers pause timers when the phone is locked. For a walk or ride, a monitored journey also tracks your route.
+            Signed in, the timer also runs on SafeNav&apos;s server: if your phone is switched off or SafeNav is closed when it ends, your contacts still get the
+            SOS, with your last shared location. For a walk or ride, a monitored journey also tracks your route.
           </p>
         </div>
       </main>

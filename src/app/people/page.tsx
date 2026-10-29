@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { ContactsTabs } from "@/components/ContactsTabs";
 import Map, { type MapMarker } from "@/components/Map";
+import { AlertsCard } from "@/components/AlertsCard";
 import { PageHeader } from "@/components/Nav";
 import { initials } from "@/components/Sos";
 import { Badge, Callout, EmptyState } from "@/components/ui";
@@ -51,6 +52,7 @@ export default function PeoplePage() {
       <ContactsTabs sosCount={sosCount} />
       <div className="space-y-4 px-4">
         {error && <Callout tone="danger">{error}</Callout>}
+        <AlertsCard compact />
         {!people ? (
           <div className="space-y-3" aria-busy="true">
             {[0, 1].map((i) => (

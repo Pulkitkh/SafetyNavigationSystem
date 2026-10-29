@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Callout, IconTile } from "@/components/ui";
+import { keyBytes } from "@/lib/client/push";
 
 interface Invite {
   userName: string;
@@ -17,12 +18,6 @@ interface Invite {
 }
 
 type PushState = "unsupported" | "needs-install" | "idle" | "working" | "on" | "denied" | "error";
-
-function keyBytes(base64: string) {
-  const pad = "=".repeat((4 - (base64.length % 4)) % 4);
-  const raw = atob((base64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
-  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
-}
 
 function deviceLabel() {
   const ua = navigator.userAgent;

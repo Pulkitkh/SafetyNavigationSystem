@@ -67,17 +67,19 @@ self.addEventListener("push", (event) => {
     data = { title: "SafeNav alert", body: event.data ? event.data.text() : "" };
   }
   const sos = data.kind === "sos";
+  // "Are you OK?" and lost-touch warnings need an answer too, so they stay until tapped.
+  const urgent = sos || data.kind === "checkin" || data.kind === "warning";
   event.waitUntil(
     self.registration.showNotification(data.title || "SafeNav alert", {
       body: data.body || "",
       tag: data.tag || data.kind || "safenav",
       renotify: true,
-      requireInteraction: sos,
-      vibrate: sos ? [600, 200, 600, 200, 600, 200, 1200] : [200, 100, 200],
+      requireInteraction: urgent,
+      vibrate: sos ? [600, 200, 600, 200, 600, 200, 1200] : urgent ? [500, 200, 500, 200, 500] : [200, 100, 200],
       icon: "/icons/icon-192.png",
       badge: "/icons/badge-72.png",
       data: { url: data.url || "/" },
-      actions: data.url ? [{ action: "open", title: sos ? "See live location" : "Open" }] : [],
+      actions: data.url ? [{ action: "open", title: sos ? "See live location" : data.kind === "checkin" ? "Open SafeNav" : "Open" }] : [],
     }),
   );
 });
