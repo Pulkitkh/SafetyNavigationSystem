@@ -347,11 +347,15 @@ export function defaultOpenProbability(kind: PoiKind, hour: number): number {
     case "food":
       if (hour >= 9 && hour < 22) return 0.75;
       if (hour >= 22 && hour < 24) return 0.35;
+      // Tea stalls and breakfast places open early.
+      if (hour >= 6 && hour < 9) return 0.4;
       return 0.05;
     default:
       if (hour >= 9 && hour < 20) return 0.75;
       if (hour >= 20 && hour < 22) return 0.45;
       if (hour >= 22 && hour < 23) return 0.15;
+      // Dairies, newspaper stands and general stores open from about 7.
+      if (hour >= 7 && hour < 9) return 0.25;
       return 0.03;
   }
 }

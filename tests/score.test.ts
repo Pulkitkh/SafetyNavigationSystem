@@ -62,6 +62,10 @@ describe("factor functions", () => {
     expect(defaultOpenProbability("shop", 23)).toBeLessThan(0.1);
     expect(defaultOpenProbability("hospital", 3)).toBe(1);
     expect(defaultOpenProbability("police", 2)).toBe(1);
+    // Early morning is not the middle of the night.
+    expect(defaultOpenProbability("food", 7)).toBeGreaterThan(0.3);
+    expect(defaultOpenProbability("shop", 8)).toBeGreaterThan(defaultOpenProbability("shop", 3));
+    expect(defaultOpenProbability("food", 4)).toBeLessThan(0.1);
     // Transit stops bring people only while services run.
     expect(defaultOpenProbability("transit", 9)).toBe(1);
     expect(defaultOpenProbability("transit", 1)).toBeLessThan(0.2);
