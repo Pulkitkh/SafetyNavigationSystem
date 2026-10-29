@@ -33,6 +33,17 @@
   ],
   "shortcuts": [
     {
+      "name": "Safety: SOS and setup",
+      "short_name": "SOS",
+      "url": "/safety",
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
       "name": "Emergency help",
       "url": "/help",
       "icons": [
@@ -62,5 +73,7 @@
         }
       ]
     }
-  ]
+  ],
+  "id": "/",
+  "prefer_related_applications": false
 }

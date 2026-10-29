@@ -5,6 +5,8 @@ import { useEffect, useRef } from "react";
 import { useSos } from "@/components/Sos";
 import { usePrefs, useSession } from "@/lib/client/hooks";
 import { api } from "@/lib/client/api";
+// Registers Chrome's install-app event listener on every page, before any page asks for it.
+import "@/lib/client/install";
 import { nativeSos, registerAppDevice, sendToken } from "@/lib/client/native";
 import { store } from "@/lib/client/store";
 

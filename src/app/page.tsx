@@ -1,6 +1,6 @@
 "use client";
 
-import { Accessibility, ArrowRight, ArrowUpDown, Car, ChevronRight, Clock, CloudRain, Footprints, Info, LocateFixed, MapPin, MessageSquareWarning, Moon, PhoneCall, Radio, ScanSearch, ShieldCheck, Star, Sun, Sunset, Timer, TriangleAlert, X } from "lucide-react";
+import { Accessibility, ArrowRight, ArrowUpDown, Car, ChevronRight, Clock, CloudRain, Download, Footprints, Info, LocateFixed, MapPin, MessageSquareWarning, Moon, PhoneCall, Radio, ScanSearch, ShieldCheck, Star, Sun, Sunset, Timer, TriangleAlert, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -15,6 +15,8 @@ import { store, type SavedPlace } from "@/lib/client/store";
 import type { LngLat } from "@/lib/geo";
 import { VEHICLE_LABELS, VEHICLE_TYPES, type VehicleType } from "@/lib/phone";
 import type { PlanResult } from "@/lib/safety/plan";
+import { useInstall } from "@/lib/client/install";
+import { isNativeApp } from "@/lib/client/native";
 import { useReadiness } from "@/lib/client/readiness";
 import { lightPeriod, type LightPeriod } from "@/lib/time";
 
@@ -48,6 +50,15 @@ export default function PlanPage() {
   const router = useRouter();
   const { me, contacts } = useSession();
   const readiness = useReadiness();
+  const { installed, canPrompt, install } = useInstall();
+  const [installHidden, setInstallHidden] = useState(true);
+  useEffect(() => {
+    try {
+      setInstallHidden(isNativeApp() || localStorage.getItem("safenav.installHidden") === "1");
+    } catch {
+      setInstallHidden(isNativeApp());
+    }
+  }, []);
   const [prefs, setPrefs] = usePrefs();
   const geo = useGeolocation();
   const here: LngLat | null = geo.fix ? [geo.fix.lng, geo.fix.lat] : null;
@@ -474,6 +485,33 @@ export default function PlanPage() {
                   </span>
                   <ChevronRight className="h-6 w-6 shrink-0" aria-hidden />
                 </Link>
+              )}
+
+              {canPrompt && !installed && !installHidden && (
+                <div className="card rise flex items-center gap-3 p-4">
+                  <IconTile icon={Download} tone="brand" />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-extrabold text-ink">Install SafeNav</p>
+                    <p className="text-[13px] text-ink-2">Opens from your home screen, no download needed.</p>
+                  </div>
+                  <button onClick={() => void install()} className="btn btn-primary btn-sm shrink-0">
+                    Install
+                  </button>
+                  <button
+                    onClick={() => {
+                      setInstallHidden(true);
+                      try {
+                        localStorage.setItem("safenav.installHidden", "1");
+                      } catch {
+                        // not critical
+                      }
+                    }}
+                    aria-label="Hide"
+                    className="tap -mr-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ink-3"
+                  >
+                    <X className="h-5 w-5" aria-hidden />
+                  </button>
+                </div>
               )}
 
               <div className="grid grid-cols-2 gap-3">
