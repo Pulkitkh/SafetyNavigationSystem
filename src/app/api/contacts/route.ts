@@ -28,6 +28,7 @@ export const GET = route(async () => {
       alerts: {
         push: devices.filter((d) => d.contactId === c.id && d.kind === "push").length,
         telegram: devices.filter((d) => d.contactId === c.id && d.kind === "telegram").length,
+        whatsapp: devices.filter((d) => d.contactId === c.id && d.kind === "whatsapp").length,
       },
     })),
   });

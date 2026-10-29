@@ -14,7 +14,7 @@ export interface StoredContact {
   relation: string;
   isPrimary: boolean;
   /** Devices that get this contact's SOS alerts automatically. */
-  alerts?: { push: number; telegram: number };
+  alerts?: { push: number; telegram: number; whatsapp?: number };
 }
 
 export interface ActiveJourney {

@@ -174,8 +174,8 @@ export const guardianDevices = sqliteTable(
     contactId: text("contact_id")
       .notNull()
       .references(() => contacts.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["push", "telegram"] }).notNull(),
-    // Push: the subscription endpoint. Telegram: the chat id.
+    kind: text("kind", { enum: ["push", "telegram", "whatsapp"] }).notNull(),
+    // Push: the subscription endpoint. Telegram: the chat id. WhatsApp: the phone number, digits only.
     address: text("address").notNull(),
     // Push only: the subscription's p256dh and auth keys as JSON.
     keys: text("keys"),

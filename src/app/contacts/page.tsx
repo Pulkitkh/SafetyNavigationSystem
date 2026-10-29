@@ -131,7 +131,7 @@ export default function ContactsPage() {
     await refreshContacts();
   };
 
-  const linkedCount = contacts.filter((c) => (c.alerts?.push ?? 0) + (c.alerts?.telegram ?? 0) > 0).length;
+  const linkedCount = contacts.filter((c) => (c.alerts?.push ?? 0) + (c.alerts?.telegram ?? 0) + (c.alerts?.whatsapp ?? 0) > 0).length;
 
   return (
     <main id="main" className="mx-auto max-w-lg pb-nav">
@@ -173,7 +173,7 @@ export default function ContactsPage() {
         ) : (
           <ul className="space-y-3">
             {contacts.map((c, i) => {
-              const linked = (c.alerts?.push ?? 0) + (c.alerts?.telegram ?? 0);
+              const linked = (c.alerts?.push ?? 0) + (c.alerts?.telegram ?? 0) + (c.alerts?.whatsapp ?? 0);
               return (
                 <li key={c.id} className={`card rise rise-${Math.min(i + 1, 4)} p-4`}>
                   <div className="flex items-center gap-3">
@@ -206,7 +206,9 @@ export default function ContactsPage() {
                         <>
                           <b>Instant alerts on</b>
                           {" · "}
-                          {[c.alerts?.push ? `${c.alerts.push} phone${c.alerts.push > 1 ? "s" : ""}` : null, c.alerts?.telegram ? "Telegram" : null].filter(Boolean).join(" + ")}
+                          {[c.alerts?.push ? `${c.alerts.push} phone${c.alerts.push > 1 ? "s" : ""}` : null, c.alerts?.whatsapp ? "WhatsApp" : null, c.alerts?.telegram ? "Telegram" : null]
+                            .filter(Boolean)
+                            .join(" + ")}
                         </>
                       ) : (
                         <>
@@ -234,8 +236,8 @@ export default function ContactsPage() {
             <li className="flex gap-3">
               <IconTile icon={BellRing} tone="good" size="sm" />
               <p className="text-sm text-ink-2">
-                <b className="text-ink">Instant alert on their phone.</b> They open their invite link once and tap &ldquo;Turn on alerts&rdquo;. After that every SOS
-                pops up on their phone with your live location, with nothing for you to do.
+                <b className="text-ink">Instant alert on their phone or WhatsApp.</b> They open their invite link once and turn on alerts. After that every
+                SOS reaches them with your live location, with nothing for you to do.
               </p>
             </li>
             <li className="flex gap-3">
@@ -352,7 +354,7 @@ export default function ContactsPage() {
                 Make primary contact
               </button>
             )}
-            {(menu.alerts?.push ?? 0) + (menu.alerts?.telegram ?? 0) > 0 && (
+            {(menu.alerts?.push ?? 0) + (menu.alerts?.telegram ?? 0) + (menu.alerts?.whatsapp ?? 0) > 0 && (
               <button onClick={() => void stopAlerts(menu)} className="tap flex min-h-14 w-full items-center gap-3 px-5 text-left font-semibold text-ink">
                 <BellOff className="h-5 w-5 text-ink-2" aria-hidden />
                 Stop instant alerts

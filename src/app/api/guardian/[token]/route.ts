@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
-import { ensureTelegramWebhook, telegramBotName, vapidPublicKey } from "@/lib/server/alerts";
+import { ensureTelegramWebhook, telegramBotName, vapidPublicKey, whatsappEnabled } from "@/lib/server/alerts";
 import { inviteFor } from "@/lib/server/guardian";
 import { json, rateLimit, route } from "@/lib/server/http";
 import { appUrl } from "@/lib/server/url";
@@ -22,6 +22,12 @@ export const GET = route(async (req: NextRequest, { params }: Ctx) => {
     contactName: contact.name,
     vapidPublicKey: vapidPublicKey(),
     telegram: bot ? `https://t.me/${bot}?start=${token}` : null,
-    linked: { push: devices.filter((d) => d.kind === "push").length, telegram: devices.filter((d) => d.kind === "telegram").length },
+    // WhatsApp alerts go to the number the inviter saved; shown so the contact can check it's theirs.
+    whatsapp: whatsappEnabled() ? { number: contact.phone } : null,
+    linked: {
+      push: devices.filter((d) => d.kind === "push").length,
+      telegram: devices.filter((d) => d.kind === "telegram").length,
+      whatsapp: devices.filter((d) => d.kind === "whatsapp").length,
+    },
   });
 });

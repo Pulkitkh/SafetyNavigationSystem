@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { checkUpstreams, summarise } from "@/lib/providers/health";
 import { olaEnabled } from "@/lib/providers/ola";
-import { telegramEnabled, vapidPublicKey } from "@/lib/server/alerts";
+import { telegramEnabled, vapidPublicKey, whatsappEnabled } from "@/lib/server/alerts";
 import { json, rateLimit, route } from "@/lib/server/http";
 import { smsProvider } from "@/lib/server/sms";
 
@@ -32,6 +32,7 @@ export const GET = route(async (req: NextRequest) => {
     "place search (Ola Maps)": on(olaEnabled()),
     "SOS app notifications (Web Push)": on(!!vapidPublicKey() && !!process.env.VAPID_PRIVATE_KEY),
     "SOS alerts on Telegram": on(telegramEnabled()),
+    "SOS alerts on WhatsApp": on(whatsappEnabled()),
     "SOS SMS gateway": on(!!smsProvider()),
   };
   return json({ ok: healthy, database, services, optional, probes, checkedAt: new Date().toISOString() }, healthy ? 200 : 503);

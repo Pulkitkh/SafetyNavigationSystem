@@ -12,7 +12,7 @@ SafeNav is a mobile-first web app (installable PWA) for getting around Indian ci
 - **Monitors cab and auto rides.** It records the number plate, then watches for detours, long unexplained stops and late arrival.
 - **Checks in, then escalates.** If you leave the route, stop for too long or run late, it asks "Are you OK?". If you don't answer within 60 seconds, it raises an SOS automatically.
 - **Sends SOS automatically, the moment you need it.** Hold the red SOS button for one second (or shake the phone) and, with nothing more to tap:
-  - every trusted contact who opened their one-time invite link gets an instant alert on their phone (free Web Push) or on Telegram, with your live location;
+  - every trusted contact who opened their one-time invite link gets an instant alert on their phone (free Web Push), on WhatsApp (Meta's official Cloud API, [setup](docs/WHATSAPP.md)) or on Telegram, with your live location;
   - in the Android app, an SMS goes to every contact straight from your SIM, even with no internet;
   - the SOS screen shows who was reached, over which channel, and who has opened your alert.
 

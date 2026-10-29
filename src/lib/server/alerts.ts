@@ -6,10 +6,14 @@
  *   link and allowed notifications (free; VAPID keys only).
  * - Telegram, when TELEGRAM_BOT_TOKEN is set and the contact started the bot
  *   from their invite link (free).
+ * - WhatsApp, through Meta's official WhatsApp Cloud API, when WHATSAPP_TOKEN
+ *   and WHATSAPP_PHONE_NUMBER_ID are set and the contact opted in from their
+ *   invite link. Business-initiated messages must use a template Meta has
+ *   approved, and Meta bills each one (about ₹0.12 for a utility message in India).
  *
  * Paid SMS gateways (sms.ts) and the phone's own SMS (native app) run alongside.
  */
-import { createHash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import webpush from "web-push";
 import { getDb, schema } from "@/lib/db";
@@ -30,7 +34,7 @@ export interface AlertPayload {
 export interface DeliveryResult {
   contactId: string;
   deviceId: string;
-  channel: "push" | "telegram";
+  channel: "push" | "telegram" | "whatsapp";
   ok: boolean;
   error?: string;
 }
@@ -172,6 +176,88 @@ async function sendTelegram(device: typeof schema.guardianDevices.$inferSelect, 
   }
 }
 
+// ---------------------------------------------------------------- WhatsApp
+
+export function whatsappEnabled() {
+  return !!process.env.WHATSAPP_TOKEN?.trim() && !!process.env.WHATSAPP_PHONE_NUMBER_ID?.trim();
+}
+
+/** WhatsApp template variables can't contain newlines, tabs or long runs of spaces. */
+export function templateText(v: string, max = 600) {
+  return v.replace(/[\n\t]+/g, " ").replace(/ {4,}/g, "   ").trim().slice(0, max) || "-";
+}
+
+const HEADLINE: Record<AlertKind, (title: string) => string> = {
+  sos: (t) => `🚨 ${t}`,
+  safe: (t) => `✅ ${t}`,
+  journey: (t) => t,
+  test: (t) => t,
+};
+
+async function whatsapp(body: unknown): Promise<void> {
+  const version = process.env.WHATSAPP_API_VERSION?.trim() || "v21.0";
+  const res = await fetch(`https://graph.facebook.com/${version}/${process.env.WHATSAPP_PHONE_NUMBER_ID!.trim()}/messages`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${process.env.WHATSAPP_TOKEN!.trim()}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ messaging_product: "whatsapp", ...(body as object) }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (res.ok) return;
+  const data = (await res.json().catch(() => ({}))) as { error?: { message?: string; code?: number } };
+  const err = new Error(`WhatsApp: ${data.error?.message ?? `HTTP ${res.status}`}`) as Error & { code?: number };
+  err.code = data.error?.code;
+  throw err;
+}
+
+/** Meta signs webhook calls with the app secret: X-Hub-Signature-256: sha256=<hex HMAC of the raw body>. */
+export function validMetaSignature(raw: string, header: string | null, secret: string) {
+  if (!header?.startsWith("sha256=")) return false;
+  const expected = createHmac("sha256", secret).update(raw).digest("hex");
+  const given = header.slice(7);
+  return given.length === expected.length && timingSafeEqual(Buffer.from(given), Buffer.from(expected));
+}
+
+/** Free-form text: only allowed within 24 hours of the contact messaging the business number. */
+export function whatsappText(to: string, text: string) {
+  return whatsapp({ to, type: "text", text: { body: text, preview_url: true } });
+}
+
+/**
+ * One approved template carries every kind of alert (see docs/WHATSAPP.md):
+ * {{1}} headline, {{2}} details, {{3}} link to open.
+ */
+async function sendWhatsApp(device: typeof schema.guardianDevices.$inferSelect, p: AlertPayload): Promise<{ ok: boolean; gone?: boolean; error?: string }> {
+  if (!whatsappEnabled()) return { ok: false, error: "WhatsApp not configured" };
+  const link =
+    withDevice(p.url, device.id) ??
+    (p.lat != null && p.lng != null ? `https://maps.google.com/?q=${p.lat.toFixed(6)},${p.lng.toFixed(6)}` : process.env.APP_URL?.trim() || "the SafeNav app");
+  try {
+    await whatsapp({
+      to: device.address.replace(/\D/g, ""),
+      type: "template",
+      template: {
+        name: process.env.WHATSAPP_TEMPLATE?.trim() || "safenav_alert",
+        language: { code: process.env.WHATSAPP_TEMPLATE_LANG?.trim() || "en" },
+        components: [
+          {
+            type: "body",
+            parameters: [HEADLINE[p.kind](p.title), p.body, link].map((t) => ({ type: "text", text: templateText(t) })),
+          },
+        ],
+      },
+    });
+    // A map pin is only allowed inside the 24-hour window; outside it this is refused, which is fine.
+    if (p.kind === "sos" && p.lat != null && p.lng != null) {
+      await whatsapp({ to: device.address.replace(/\D/g, ""), type: "location", location: { latitude: p.lat, longitude: p.lng, name: "Last known location" } }).catch(() => {});
+    }
+    return { ok: true };
+  } catch (err) {
+    const code = (err as { code?: number }).code;
+    // 131026: the number isn't on WhatsApp or can't receive messages, so stop trying it.
+    return { ok: false, gone: code === 131026, error: (err as Error).message };
+  }
+}
+
 // ---------------------------------------------------------------- Fan-out
 
 /** Alerts every linked device of the given contacts in parallel and records each outcome. */
@@ -183,7 +269,7 @@ export async function alertContacts(contactIds: string[], payload: AlertPayload,
 
   const results = await Promise.all(
     devices.map(async (d) => {
-      const r = d.kind === "push" ? await sendPush(d, payload) : await sendTelegram(d, payload);
+      const r = d.kind === "push" ? await sendPush(d, payload) : d.kind === "whatsapp" ? await sendWhatsApp(d, payload) : await sendTelegram(d, payload);
       return { device: d, ...r };
     }),
   );

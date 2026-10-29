@@ -11,7 +11,7 @@ import { store, type StoredContact } from "@/lib/client/store";
 import { detectPlatform, EMERGENCY_NUMBERS, mapsLink, smsUri, sosMessage, whatsappUri } from "@/lib/sos";
 
 type Trigger = "manual" | "missed_checkin" | "deviation";
-type Channel = "sms_device" | "push" | "telegram" | "sms_gateway";
+type Channel = "sms_device" | "push" | "telegram" | "whatsapp" | "sms_gateway";
 
 interface Reach {
   delivered: Channel[];
@@ -68,6 +68,7 @@ const CHANNEL_LABEL: Record<Channel, string> = {
   sms_gateway: "SMS",
   push: "App alert",
   telegram: "Telegram",
+  whatsapp: "WhatsApp",
 };
 
 function addReach(map: Record<string, Reach>, id: string, channel: Channel, ok: boolean): Record<string, Reach> {

@@ -1,6 +1,6 @@
 "use client";
 
-import { BellRing, Check, LoaderCircle, MapPin, Phone, Send, ShieldCheck, Smartphone, SquarePlus, TriangleAlert } from "lucide-react";
+import { BellRing, Check, LoaderCircle, MapPin, MessageCircle, Phone, Send, ShieldCheck, Smartphone, SquarePlus, TriangleAlert } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Callout, IconTile } from "@/components/ui";
@@ -10,7 +10,8 @@ interface Invite {
   contactName: string;
   vapidPublicKey: string | null;
   telegram: string | null;
-  linked: { push: number; telegram: number };
+  whatsapp: { number: string } | null;
+  linked: { push: number; telegram: number; whatsapp?: number };
 }
 
 type PushState = "unsupported" | "needs-install" | "idle" | "working" | "on" | "denied" | "error";
@@ -42,6 +43,8 @@ export default function GuardianInvitePage() {
   const [push, setPush] = useState<PushState>("idle");
   const [pushError, setPushError] = useState<string | null>(null);
   const [test, setTest] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const [wa, setWa] = useState<"off" | "working" | "on" | "error">("off");
+  const [waError, setWaError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/guardian/${encodeURIComponent(token)}`, { cache: "no-store" })
@@ -49,6 +52,7 @@ export default function GuardianInvitePage() {
         const body = await r.json();
         if (!r.ok) throw new Error(body.error ?? "This invite link is not valid");
         setInvite(body);
+        if (body.linked?.whatsapp) setWa("on");
       })
       .catch((e: Error) => setError(e.message));
   }, [token]);
@@ -96,6 +100,23 @@ export default function GuardianInvitePage() {
     } catch (e) {
       setPush("error");
       setPushError((e as Error).message);
+    }
+  };
+
+  const setWhatsApp = async (on: boolean) => {
+    setWa("working");
+    setWaError(null);
+    try {
+      const res = await fetch(`/api/guardian/${encodeURIComponent(token)}/whatsapp`, {
+        method: on ? "POST" : "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: on ? JSON.stringify({ consent: true }) : undefined,
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
+      setWa(on ? "on" : "off");
+    } catch (e) {
+      setWa("error");
+      setWaError((e as Error).message);
     }
   };
 
@@ -191,6 +212,38 @@ export default function GuardianInvitePage() {
         {!invite.vapidPublicKey && push !== "on" && <p className="mt-2 text-sm text-caution">App alerts aren&apos;t set up on this server yet.</p>}
         {pushError && <p className="mt-2 text-sm text-danger">Couldn&apos;t turn on alerts: {pushError}</p>}
       </section>
+
+      {invite.whatsapp && (
+        <section className="card rise rise-2 mt-4 p-5" aria-labelledby="wa-title">
+          <div className="flex items-start gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#128c4b] text-white" aria-hidden>
+              <MessageCircle className="h-[22px] w-[22px]" />
+            </span>
+            <div className="min-w-0">
+              <h2 id="wa-title" className="text-lg font-extrabold text-ink">
+                {wa === "on" ? "WhatsApp alerts are on" : "Get alerts on WhatsApp"}
+              </h2>
+              <p className="mt-0.5 text-sm text-ink-2">
+                {wa === "on"
+                  ? `If ${first} presses SOS, SafeNav messages you on WhatsApp at ${invite.whatsapp.number} with their live location.`
+                  : `SafeNav will message you on WhatsApp at ${invite.whatsapp.number} if ${first} ever presses SOS. Works even if this browser is closed.`}
+              </p>
+            </div>
+          </div>
+          {wa === "on" ? (
+            <button onClick={() => void setWhatsApp(false)} className="btn btn-ghost btn-sm mt-3 w-full">
+              Turn off WhatsApp alerts
+            </button>
+          ) : (
+            <button onClick={() => void setWhatsApp(true)} disabled={wa === "working"} className="btn mt-4 w-full bg-[#128c4b] text-base text-white">
+              {wa === "working" ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden /> : <MessageCircle className="h-5 w-5" aria-hidden />}
+              {wa === "working" ? "Turning on…" : "Turn on WhatsApp alerts"}
+            </button>
+          )}
+          {waError && <p className="mt-2 text-sm text-danger">Couldn&apos;t change WhatsApp alerts: {waError}</p>}
+          <p className="mt-2 text-[13px] text-ink-3">Not your number? Ask {first} to update it in their SafeNav contacts. Reply STOP on WhatsApp at any time.</p>
+        </section>
+      )}
 
       {invite.telegram && (
         <section className="card rise rise-2 mt-4 p-5" aria-labelledby="tg-title">
