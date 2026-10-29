@@ -19,6 +19,7 @@ SafeNav is a mobile-first web app (installable PWA) for getting around Indian ci
   One-tap SMS and WhatsApp, a call to 112, a loud alarm and a **practice mode** that sends nothing are on the same screen. A paid SMS gateway (Twilio or MSG91) is optional.
 - **Takes crowdsourced reports.** Harassment, snatching, poor lighting, stray dogs and more. Reports fade over time, gain weight when others confirm them, and are hidden when flagged.
 - **Shake to SOS** (opt-in): shaking the phone hard sends SOS, after a countdown you choose (instant, 3, 5 or 10 s). In the Android app it works with the screen locked.
+- **People I protect.** Contacts who accept your invite with their own SafeNav account see you on their People page: your journeys, an SOS the moment you raise it (full screen, with an alarm), and your live location at any time if you turn on **Share my live location**. They can answer "I'm on my way", which you see on your SOS screen. In the Android app the alarm rings even with the phone on silent ([setup](docs/RINGING_ALERTS.md)).
 - **Safety setup checklist** that walks new users through contacts, instant alerts, location, shake to SOS and a practice SOS.
 - **Light and dark themes**, large touch targets, visible focus and WCAG AA contrast throughout.
 - **Fake incoming call** with a ringtone, vibration and a voice on the line, for leaving an uncomfortable situation.
@@ -56,11 +57,20 @@ Known limit: browsers pause location when the screen is locked or the app is in 
 
 India publishes no street-level crime data (NCRB statistics are city-level and annual), so SafeNav does not claim to use crime records. The model and its weights are documented in [docs/SAFETY_MODEL.md](docs/SAFETY_MODEL.md).
 
+## Data storage
+
+Accounts, contacts and trips are stored in Postgres: Supabase in production, so
+nothing is lost when the server restarts or redeploys. Locally and in tests, the
+same Postgres engine runs in-process (PGlite), so no database server is needed.
+The schema is created and upgraded automatically on start (`src/lib/db/migrate.ts`,
+generated with `npm run db:generate`). Tables live in a separate `safenav` schema
+that Supabase's public REST API doesn't expose.
+
 ## Tech stack
 
 - Next.js 15 (App Router) and React 19, TypeScript, Tailwind CSS 4
 - MapLibre GL JS
-- Drizzle ORM on SQLite/libSQL: a local file for development, [Turso](https://turso.tech) for production
+- Drizzle ORM on Postgres: [Supabase](https://supabase.com) in production, PGlite (in-process Postgres) for development and tests
 - Session auth (bcrypt plus httpOnly cookie, server-side sessions), Zod validation, same-origin checks, rate limiting
 - Vitest unit tests and end-to-end API tests
 
@@ -89,13 +99,13 @@ The database schema is created automatically on first use (`data/safenav.db`). L
 
 ## Deployment
 
-**Vercel and Turso (free tiers):**
+**Render and Supabase (free tiers, the live setup):**
 
-1. `turso db create safenav`, then `turso db tokens create safenav`.
-2. Import the repository into Vercel. Set `DATABASE_URL` (the `libsql://…` URL), `DATABASE_AUTH_TOKEN`, `APP_URL` (your domain) and `OSM_CONTACT_EMAIL`.
-3. Deploy. Tables are created on the first request.
+1. Create a Supabase project in the same region as the server. For least privilege, create a login role that owns a `safenav` schema and can connect to the database (see `scripts/` history or run the SQL in the Supabase SQL editor).
+2. Set `DATABASE_URL` on Render to the **Session pooler** URL (`postgresql://<role>.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres`). Render can't reach Supabase's IPv6-only direct host.
+3. Set `APP_URL`, `OSM_CONTACT_EMAIL` and the optional alert settings. Deploy. Tables are created and upgraded on start.
 
-**Any Node host or VPS:** run `npm run build && npm start` with `DATABASE_URL=file:/path/to/safenav.db` on a persistent disk.
+**Any Node host or VPS:** run `npm run build && npm start` with `DATABASE_URL` pointing at any Postgres 14+, or `file:/path/to/folder` on a persistent disk to use the built-in PGlite.
 
 **Behind an outbound HTTP proxy:** Node's `fetch` ignores `HTTPS_PROXY` by default. Set `NODE_USE_ENV_PROXY=1` (Node 22.21+) so the server can reach the data services.
 

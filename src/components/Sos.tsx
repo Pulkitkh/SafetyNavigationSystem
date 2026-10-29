@@ -357,9 +357,14 @@ function SosScreen({
   }, []);
   useSiren(siren);
 
-  const reached = contacts.filter((c) => (sos.reach[c.id]?.delivered.length ?? 0) > 0);
+  // Reached: an alert was delivered, or they opened it or answered, which proves it arrived.
+  const isReached = (id: string) => {
+    const r = sos.reach[id];
+    return !!r && (r.delivered.length > 0 || !!r.seenAt || !!r.response);
+  };
+  const reached = contacts.filter((c) => isReached(c.id));
   const working = sos.server === "pending" || sos.sms === "pending";
-  const unreached = contacts.filter((c) => !(sos.reach[c.id]?.delivered.length ?? 0));
+  const unreached = contacts.filter((c) => !isReached(c.id));
   const phones = (unreached.length ? unreached : contacts).map((c) => c.phone);
 
   const share = async () => {

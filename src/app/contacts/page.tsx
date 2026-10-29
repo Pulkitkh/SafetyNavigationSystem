@@ -134,7 +134,7 @@ export default function ContactsPage() {
     await refreshContacts();
   };
 
-  const linkedCount = contacts.filter((c) => (c.alerts?.push ?? 0) + (c.alerts?.telegram ?? 0) + (c.alerts?.whatsapp ?? 0) > 0).length;
+  const linkedCount = contacts.filter((c) => !!c.guardianUserId || (c.alerts?.push ?? 0) + (c.alerts?.telegram ?? 0) + (c.alerts?.whatsapp ?? 0) > 0).length;
 
   return (
     <main id="main" className="mx-auto max-w-lg pb-nav">
@@ -177,7 +177,7 @@ export default function ContactsPage() {
         ) : (
           <ul className="space-y-3">
             {contacts.map((c, i) => {
-              const linked = (c.alerts?.push ?? 0) + (c.alerts?.telegram ?? 0) + (c.alerts?.whatsapp ?? 0);
+              const linked = (c.guardianUserId ? 1 : 0) + (c.alerts?.push ?? 0) + (c.alerts?.telegram ?? 0) + (c.alerts?.whatsapp ?? 0);
               return (
                 <li key={c.id} className={`card rise rise-${Math.min(i + 1, 4)} p-4`}>
                   <div className="flex items-center gap-3">
@@ -215,7 +215,7 @@ export default function ContactsPage() {
                         <>
                           <b>Instant alerts on</b>
                           {" · "}
-                          {[c.alerts?.push ? `${c.alerts.push} phone${c.alerts.push > 1 ? "s" : ""}` : null, c.alerts?.whatsapp ? "WhatsApp" : null, c.alerts?.telegram ? "Telegram" : null]
+                          {[c.guardianUserId ? "SafeNav app" : null, c.alerts?.push ? `${c.alerts.push} phone${c.alerts.push > 1 ? "s" : ""}` : null, c.alerts?.whatsapp ? "WhatsApp" : null, c.alerts?.telegram ? "Telegram" : null]
                             .filter(Boolean)
                             .join(" + ")}
                         </>

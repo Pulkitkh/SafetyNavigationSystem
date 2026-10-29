@@ -43,7 +43,7 @@ export function useReadiness(): { items: ReadinessItem[]; done: number; next: Re
     }
   }, []);
 
-  const linked = contacts.some((c) => (c.alerts?.push ?? 0) + (c.alerts?.telegram ?? 0) + (c.alerts?.whatsapp ?? 0) > 0);
+  const linked = contacts.some((c) => !!c.guardianUserId || (c.alerts?.push ?? 0) + (c.alerts?.telegram ?? 0) + (c.alerts?.whatsapp ?? 0) > 0);
   const items: ReadinessItem[] = [
     { id: "account", title: "Create your account", text: "Needed for live tracking and automatic alerts", done: !!me, href: "/register?next=/safety" },
     { id: "contacts", title: "Add trusted contacts", text: "Up to 5 people who get your SOS", done: contacts.length > 0, href: "/contacts" },
