@@ -4,7 +4,8 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { useSos } from "@/components/Sos";
 import { usePrefs, useSession } from "@/lib/client/hooks";
-import { nativeSos } from "@/lib/client/native";
+import { api } from "@/lib/client/api";
+import { nativeSos, registerAppDevice, sendToken } from "@/lib/client/native";
 import { store } from "@/lib/client/store";
 
 /**
@@ -36,6 +37,18 @@ export function NativeBridge() {
       })
       .catch(() => {});
   }, [me, contacts, prefs.shakeCountdownS, prefs.autoSms, path]);
+
+  // Signed in: this phone rings for SOS from anyone who added this account.
+  useEffect(() => {
+    if (!me || !nativeSos()) return;
+    void api<{ fcm: { apiKey: string; appId: string; projectId: string; senderId: string } | null }>("/api/app/config")
+      .then(({ fcm }) => (fcm ? registerAppDevice(fcm) : undefined))
+      .catch(() => {});
+    const sub = nativeSos()!.addListener("pushToken", ({ token }) => void sendToken(token));
+    return () => {
+      void sub.then((h) => h.remove());
+    };
+  }, [me]);
 
   useEffect(() => {
     void nativeSos()

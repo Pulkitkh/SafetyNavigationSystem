@@ -10,6 +10,7 @@ import { initials } from "@/components/Sos";
 import { Callout, EmptyState, ListRow, Toggle } from "@/components/ui";
 import { api } from "@/lib/client/api";
 import { useSession } from "@/lib/client/hooks";
+import { unregisterAppDevice } from "@/lib/client/native";
 import { store } from "@/lib/client/store";
 
 export default function AccountPage() {
@@ -63,6 +64,7 @@ export default function AccountPage() {
   };
 
   const logout = async () => {
+    await unregisterAppDevice();
     await api("/api/auth/logout", { method: "POST" }).catch(() => {});
     store.setJourney(null);
     store.setContacts([]);

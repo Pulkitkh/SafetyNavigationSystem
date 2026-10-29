@@ -11,6 +11,7 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
+import com.google.firebase.messaging.FirebaseMessaging;
 import java.util.ArrayList;
 import java.util.List;
 import org.json.JSONException;
@@ -56,6 +57,15 @@ public class SafeNavNativePlugin extends Plugin {
         return true;
     }
 
+    /** A new Firebase token, so the web app can register it with the server. */
+    static void emitPushToken(String token) {
+        SafeNavNativePlugin p = instance;
+        if (p == null) return;
+        JSObject o = new JSObject();
+        o.put("token", token);
+        p.notifyListeners("pushToken", o, true);
+    }
+
     /** Tells the app about an SOS the native side already sent; kept until the app reads it. */
     static void emitNativeSos(JSONObject outcome) {
         SafeNavNativePlugin p = instance;
@@ -75,6 +85,7 @@ public class SafeNavNativePlugin extends Plugin {
         o.put("guardEnabled", SosNative.prefs(getContext()).getBoolean("guard", false));
         o.put("guardRunning", ShakeGuardService.running);
         o.put("autoSms", SosNative.prefs(getContext()).getBoolean("autoSms", true));
+        o.put("shareLive", SosNative.prefs(getContext()).getBoolean("shareLive", false));
         return o;
     }
 
@@ -132,7 +143,9 @@ public class SafeNavNativePlugin extends Plugin {
         if (call.hasOption("countdownS")) e.putInt("countdownS", call.getInt("countdownS", 5));
         if (call.hasOption("autoSms")) e.putBoolean("autoSms", Boolean.TRUE.equals(call.getBoolean("autoSms", true)));
         if (call.hasOption("tripId")) e.putString("tripId", call.getString("tripId", ""));
+        if (call.hasOption("shareLive")) e.putBoolean("shareLive", Boolean.TRUE.equals(call.getBoolean("shareLive", false)));
         e.apply();
+        if (call.hasOption("shareLive")) ShakeGuardService.sync(getContext());
         call.resolve(status());
     }
 
@@ -141,13 +154,50 @@ public class SafeNavNativePlugin extends Plugin {
         boolean on = Boolean.TRUE.equals(call.getBoolean("enabled", false));
         SosNative.prefs(getContext()).edit().putBoolean("guard", on).apply();
         try {
-            if (on) ShakeGuardService.start(getContext());
-            else if (ShakeGuardService.running) ShakeGuardService.stop(getContext());
+            ShakeGuardService.sync(getContext());
         } catch (RuntimeException ex) {
             call.reject("Couldn't start shake detection: " + ex.getMessage());
             return;
         }
         call.resolve(status());
+    }
+
+    /**
+     * Starts Firebase with settings from the server and returns this phone's
+     * token, so SOS alarms from people you protect can ring it.
+     */
+    @PluginMethod
+    public void initPush(PluginCall call) {
+        android.content.SharedPreferences.Editor e = SosNative.prefs(getContext()).edit();
+        e.putString("fcmAppId", call.getString("appId"));
+        e.putString("fcmApiKey", call.getString("apiKey"));
+        e.putString("fcmProjectId", call.getString("projectId"));
+        e.putString("fcmSenderId", call.getString("senderId"));
+        e.apply();
+        if (!SafeNavApp.initFirebase(getContext())) {
+            call.reject("Couldn't start Firebase with these settings");
+            return;
+        }
+        try {
+            FirebaseMessaging.getInstance().getToken().addOnCompleteListener((task) -> {
+                if (!task.isSuccessful() || task.getResult() == null) {
+                    call.reject("No push token: " + (task.getException() != null ? task.getException().getMessage() : "unknown"));
+                    return;
+                }
+                SosNative.prefs(getContext()).edit().putString("fcmToken", task.getResult()).putBoolean("fcmTokenDirty", false).apply();
+                JSObject ret = new JSObject();
+                ret.put("token", task.getResult());
+                call.resolve(ret);
+            });
+        } catch (RuntimeException ex) {
+            call.reject("Firebase isn't available: " + ex.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void stopAlarm(PluginCall call) {
+        getContext().startService(new android.content.Intent(getContext(), SosAlarmService.class).setAction(SosAlarmService.ACTION_STOP));
+        call.resolve();
     }
 
     /** An SOS sent natively while the app was closed, so the app can show it and keep sharing location. */

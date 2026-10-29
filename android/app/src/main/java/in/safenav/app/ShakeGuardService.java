@@ -7,11 +7,16 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
+import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -20,10 +25,17 @@ import android.os.PowerManager;
 import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import android.webkit.CookieManager;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.ServiceCompat;
 import androidx.core.content.ContextCompat;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -41,6 +53,7 @@ public class ShakeGuardService extends Service implements SensorEventListener {
     static final String ACTION_STOP = "in.safenav.app.GUARD_STOP";
     static final String ACTION_CANCEL = "in.safenav.app.GUARD_CANCEL";
     static final String ACTION_SEND_NOW = "in.safenav.app.GUARD_SEND_NOW";
+    static final String ACTION_STOP_ALL = "in.safenav.app.GUARD_STOP_ALL";
 
     private static final String CHANNEL_GUARD = "guard";
     private static final String CHANNEL_SOS = "sos";
@@ -70,6 +83,13 @@ public class ShakeGuardService extends Service implements SensorEventListener {
         ctx.startService(new Intent(ctx, ShakeGuardService.class).setAction(ACTION_STOP));
     }
 
+    /** Runs the service while shake to SOS or always-on sharing is on, and stops it when neither is. */
+    static void sync(Context ctx) {
+        SharedPreferences p = SosNative.prefs(ctx);
+        if (p.getBoolean("guard", false) || p.getBoolean("shareLive", false)) start(ctx);
+        else if (running) ctx.startService(new Intent(ctx, ShakeGuardService.class).setAction(ACTION_STOP_ALL));
+    }
+
     @Override
     public IBinder onBind(Intent intent) {
         return null;
@@ -80,7 +100,16 @@ public class ShakeGuardService extends Service implements SensorEventListener {
         String action = intent != null && intent.getAction() != null ? intent.getAction() : ACTION_START;
         switch (action) {
             case ACTION_STOP:
+                // "Turn off" on the notification: shake only. Location sharing is switched off in the app.
                 SosNative.prefs(this).edit().putBoolean("guard", false).apply();
+                if (SosNative.prefs(this).getBoolean("shareLive", false)) {
+                    stopShake();
+                    startInForeground();
+                    return START_STICKY;
+                }
+                stopGuard();
+                return START_NOT_STICKY;
+            case ACTION_STOP_ALL:
                 stopGuard();
                 return START_NOT_STICKY;
             case ACTION_CANCEL:
@@ -94,15 +123,20 @@ public class ShakeGuardService extends Service implements SensorEventListener {
                 }
                 return START_STICKY;
             default:
-                if (!SosNative.prefs(this).getBoolean("guard", false)) {
-                    stopSelf();
+                boolean guard = SosNative.prefs(this).getBoolean("guard", false);
+                boolean share = SosNative.prefs(this).getBoolean("shareLive", false);
+                if (!guard && !share) {
+                    stopGuard();
                     return START_NOT_STICKY;
                 }
                 if (!startInForeground()) {
                     stopSelf();
                     return START_NOT_STICKY;
                 }
-                listen();
+                if (guard) listen();
+                else stopShake();
+                if (share) startSharing();
+                else stopSharing();
                 return START_STICKY;
         }
     }
@@ -150,11 +184,103 @@ public class ShakeGuardService extends Service implements SensorEventListener {
         }
     }
 
-    private void stopGuard() {
-        running = false;
+    private void stopShake() {
         if (sensors != null) sensors.unregisterListener(this);
         sensors = null;
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        wakeLock = null;
+    }
+
+    // ------------------------------------------------------------ always-on sharing
+
+    private static final long SHARE_EVERY_MS = 60_000;
+    private static final float SHARE_MOVED_M = 30f;
+    private LocationListener shareListener;
+    private long lastShareAt = 0;
+    private final ExecutorService uploads = Executors.newSingleThreadExecutor();
+
+    /** Reports the location to the server about once a minute (sooner after moving), with the app closed too. */
+    @SuppressWarnings("MissingPermission")
+    private void startSharing() {
+        if (shareListener != null || !SosNative.hasLocationPermission(this)) return;
+        LocationManager lm = (LocationManager) getSystemService(LOCATION_SERVICE);
+        if (lm == null) return;
+        // A full class, not a lambda: Android 10 and older call the other methods too.
+        shareListener = new LocationListener() {
+            @Override
+            public void onLocationChanged(Location location) {
+                upload(location);
+            }
+
+            @Override
+            public void onStatusChanged(String provider, int status, android.os.Bundle extras) {}
+
+            @Override
+            public void onProviderEnabled(String provider) {}
+
+            @Override
+            public void onProviderDisabled(String provider) {}
+        };
+        for (String provider : new String[] { LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER }) {
+            try {
+                if (lm.isProviderEnabled(provider)) lm.requestLocationUpdates(provider, SHARE_EVERY_MS, SHARE_MOVED_M, shareListener, Looper.getMainLooper());
+            } catch (RuntimeException ignored) {
+                // provider missing on this device
+            }
+        }
+        Location known = SosNative.lastKnown(this);
+        if (known != null) upload(known);
+    }
+
+    private void stopSharing() {
+        if (shareListener == null) return;
+        LocationManager lm = (LocationManager) getSystemService(LOCATION_SERVICE);
+        if (lm != null) lm.removeUpdates(shareListener);
+        shareListener = null;
+    }
+
+    private void upload(Location loc) {
+        long now = System.currentTimeMillis();
+        // GPS and network both report; one upload per interval is enough.
+        if (now - lastShareAt < SHARE_EVERY_MS / 2) return;
+        lastShareAt = now;
+        String base = SosNative.prefs(this).getString("baseUrl", "");
+        if (base.isEmpty()) return;
+        BatteryManager bm = (BatteryManager) getSystemService(BATTERY_SERVICE);
+        int battery = bm != null ? bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) : -1;
+        uploads.execute(() -> {
+            HttpURLConnection conn = null;
+            try {
+                JSONObject body = new JSONObject();
+                body.put("lat", loc.getLatitude());
+                body.put("lng", loc.getLongitude());
+                if (loc.hasAccuracy()) body.put("accuracy", Math.min(10_000.0, (double) loc.getAccuracy()));
+                if (battery >= 0 && battery <= 100) body.put("battery", battery / 100.0);
+                body.put("at", loc.getTime());
+                conn = (HttpURLConnection) new URL(base + "/api/me/location").openConnection();
+                conn.setRequestMethod("POST");
+                conn.setConnectTimeout(20_000);
+                conn.setReadTimeout(30_000);
+                conn.setDoOutput(true);
+                conn.setRequestProperty("Content-Type", "application/json");
+                String cookie = CookieManager.getInstance().getCookie(base);
+                if (cookie != null) conn.setRequestProperty("Cookie", cookie);
+                try (OutputStream os = conn.getOutputStream()) {
+                    os.write(body.toString().getBytes(StandardCharsets.UTF_8));
+                }
+                conn.getResponseCode();
+            } catch (Exception ignored) {
+                // offline: the next fix tries again
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+        });
+    }
+
+    private void stopGuard() {
+        running = false;
+        stopShake();
+        stopSharing();
         main.removeCallbacks(tick);
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE);
         stopSelf();
@@ -165,6 +291,8 @@ public class ShakeGuardService extends Service implements SensorEventListener {
         running = false;
         if (sensors != null) sensors.unregisterListener(this);
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        stopSharing();
+        uploads.shutdown();
         super.onDestroy();
     }
 
@@ -266,15 +394,22 @@ public class ShakeGuardService extends Service implements SensorEventListener {
     }
 
     private Notification guardNotification() {
-        return new NotificationCompat.Builder(this, CHANNEL_GUARD)
+        boolean guard = SosNative.prefs(this).getBoolean("guard", false);
+        boolean share = SosNative.prefs(this).getBoolean("shareLive", false);
+        String title = guard && share ? "Sharing location · shake to SOS on" : share ? "Sharing your location" : "Shake to SOS is on";
+        String text = share
+            ? "Your trusted contacts can see where you are." + (guard ? " Shake hard to send SOS." : "") + " Turn off in SafeNav."
+            : "Shake your phone hard to alert your trusted contacts, even with the screen locked.";
+        NotificationCompat.Builder b = new NotificationCompat.Builder(this, CHANNEL_GUARD)
             .setSmallIcon(R.drawable.ic_stat_shield)
-            .setContentTitle("Shake to SOS is on")
-            .setContentText("Shake your phone hard to alert your trusted contacts, even with the screen locked.")
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setContentIntent(openApp())
-            .addAction(0, "Turn off", serviceAction(ACTION_STOP, 1))
-            .build();
+            .setContentIntent(openApp());
+        if (guard) b.addAction(0, "Turn off shake", serviceAction(ACTION_STOP, 1));
+        return b.build();
     }
 
     private Notification countdownNotification(int s) {

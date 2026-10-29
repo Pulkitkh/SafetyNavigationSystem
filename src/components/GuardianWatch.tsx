@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useSiren } from "@/components/Sos";
 import { formatAgo } from "@/lib/client/api";
+import { nativeSos } from "@/lib/client/native";
 import { respond, usePeople, type Person } from "@/lib/client/people";
 
 const SILENCED_KEY = "safenav.silencedSos";
@@ -51,6 +52,10 @@ function SosIncoming({ person, onDone, onResponded }: { person: Person; onDone: 
   useSiren(siren);
   useEffect(() => {
     navigator.vibrate?.([800, 300, 800, 300, 800, 300, 1600]);
+    // In the Android app the native alarm may be ringing; this screen takes over the sound.
+    void nativeSos()
+      ?.stopAlarm()
+      .catch(() => {});
   }, []);
   const first = person.name.split(" ")[0];
   const act = async (response: "on_my_way" | "calling" | "called_112") => {

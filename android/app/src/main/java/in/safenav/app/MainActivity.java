@@ -13,6 +13,9 @@ public class MainActivity extends BridgeActivity {
     static final String ACTION_SOS = "in.safenav.app.SOS";
     /** Link on the offline page, which can't call plugins: safenavsos://send */
     static final String SOS_SCHEME = "safenavsos";
+    /** A page of the web app to open, from an alert notification. */
+    static final String EXTRA_URL = "in.safenav.app.URL";
+    static final String EXTRA_STOP_ALARM = "in.safenav.app.STOP_ALARM";
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -37,6 +40,15 @@ public class MainActivity extends BridgeActivity {
 
     private void handle(Intent intent) {
         if (intent == null) return;
+        if (intent.getBooleanExtra(EXTRA_STOP_ALARM, false)) {
+            startService(new Intent(this, SosAlarmService.class).setAction(SosAlarmService.ACTION_STOP));
+        }
+        String url = intent.getStringExtra(EXTRA_URL);
+        if (url != null) {
+            intent.removeExtra(EXTRA_URL);
+            openPage(url);
+            return;
+        }
         Uri data = intent.getData();
         boolean link = Intent.ACTION_VIEW.equals(intent.getAction()) && data != null && SOS_SCHEME.equals(data.getScheme());
         if (!ACTION_SOS.equals(intent.getAction()) && !link) return;
@@ -54,6 +66,14 @@ public class MainActivity extends BridgeActivity {
             // The shortcut is a deliberate choice: send at once, without waiting for the web app to load.
             send(false);
         }
+    }
+
+    /** Opens a page of the web app, but only one on SafeNav's own site. */
+    private void openPage(String url) {
+        String base = SosNative.prefs(this).getString("baseUrl", "");
+        if (base.isEmpty() || !(url.equals(base) || url.startsWith(base + "/"))) return;
+        if (getBridge() == null || getBridge().getWebView() == null) return;
+        getBridge().getWebView().post(() -> getBridge().getWebView().loadUrl(url));
     }
 
     private void send(boolean report) {

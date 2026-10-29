@@ -113,6 +113,10 @@ interface SafeNavNativePlugin {
   }): Promise<NativeStatus>;
   setShakeGuard(o: { enabled: boolean }): Promise<NativeStatus>;
   takePendingSos(): Promise<{ sos: NativeSosOutcome | null }>;
+  /** Starts Firebase so SOS alarms from people you protect ring this phone. */
+  initPush(o: { apiKey: string; appId: string; projectId: string; senderId: string }): Promise<{ token: string }>;
+  stopAlarm(): Promise<void>;
+  addListener(event: "pushToken", cb: (o: { token: string }) => void): Promise<PluginListenerHandle>;
   addListener(event: "shake", cb: () => void): Promise<PluginListenerHandle>;
   addListener(event: "nativeSos", cb: (o: NativeSosOutcome) => void): Promise<PluginListenerHandle>;
 }
@@ -129,4 +133,37 @@ export function nativeSos(): SafeNavNativePlugin | null {
   }
   sosPlugin ??= registerPlugin<SafeNavNativePlugin>("SafeNavNative");
   return sosPlugin;
+}
+
+const PUSH_TOKEN_KEY = "safenav.pushToken";
+
+/** Registers this phone with the server so SOS alarms from people the user protects ring it. */
+export async function registerAppDevice(fcm: { apiKey: string; appId: string; projectId: string; senderId: string }) {
+  const native = nativeSos();
+  if (!native) return;
+  const { token } = await native.initPush(fcm);
+  await sendToken(token);
+}
+
+export async function sendToken(token: string) {
+  const res = await fetch("/api/app/devices", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, platform: "android" }) });
+  if (res.ok) {
+    try {
+      localStorage.setItem(PUSH_TOKEN_KEY, token);
+    } catch {
+      // not critical
+    }
+  }
+}
+
+/** On sign-out: this phone stops ringing for that account. */
+export async function unregisterAppDevice() {
+  let token: string | null = null;
+  try {
+    token = localStorage.getItem(PUSH_TOKEN_KEY);
+    localStorage.removeItem(PUSH_TOKEN_KEY);
+  } catch {
+    return;
+  }
+  if (token) await fetch("/api/app/devices", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) }).catch(() => {});
 }
