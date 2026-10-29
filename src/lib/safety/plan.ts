@@ -1,7 +1,7 @@
 import { and, between, eq, gte } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { bboxOf, bearing, destinationPoint, haversine, overlapRatio, type LngLat } from "@/lib/geo";
-import { fetchRouteFeatures } from "@/lib/providers/overpass";
+import { routeFeatures } from "@/lib/providers/street";
 import { osrmRoute, type RawRoute, type RouteStep, type TravelMode } from "@/lib/providers/osrm";
 import { valhallaRoute } from "@/lib/providers/valhalla";
 import { weatherAt, type WeatherAt } from "@/lib/providers/weather";
@@ -173,7 +173,7 @@ export async function planRoutes(from: LngLat, to: LngLat, mode: TravelMode, dep
   // Weather for the middle of the walk, from the hourly forecast.
   const midTrip = new Date(departAt.getTime() + (base[0].duration * 1000) / 2);
   const [featuresResult, reports, weather] = await Promise.all([
-    fetchRouteFeatures(coords).then(
+    routeFeatures(coords).then(
       (f) => ({ ok: true as const, f }),
       (err: Error) => ({ ok: false as const, err }),
     ),

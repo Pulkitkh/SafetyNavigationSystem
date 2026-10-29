@@ -175,6 +175,7 @@ export default function AreaPage() {
                   <RefreshCw className={`h-5 w-5 ${loading ? "animate-spin" : ""}`} />
                 </button>
               </div>
+              {area.dataNote && <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">{area.dataNote}</p>}
               {(area.reasons.length > 0 || area.highlights.length > 0) && (
                 <ul className="mt-3 space-y-1.5 text-sm">
                   {area.reasons.map((r) => (

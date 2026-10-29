@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import type { LngLat } from "@/lib/geo";
-import { fetchAreaFeatures } from "@/lib/providers/overpass";
+import { areaFeatures } from "@/lib/providers/street";
 import { weatherAt } from "@/lib/providers/weather";
 import { scoreArea } from "@/lib/safety/area";
 import { loadReports } from "@/lib/safety/plan";
@@ -17,12 +17,12 @@ export const GET = route(async (req: NextRequest) => {
   if (!Number.isFinite(lng) || !Number.isFinite(lat) || Math.abs(lat) > 90 || Math.abs(lng) > 180) throw new ApiError(400, "lat and lng are required");
   const point: LngLat = [lng, lat];
   const now = new Date();
-  const [features, reports, weather] = await Promise.all([fetchAreaFeatures(point), loadReports([[point]], 250).catch(() => []), weatherAt(point, now)]);
+  const [features, reports, weather] = await Promise.all([areaFeatures(point), loadReports([[point]], 250).catch(() => []), weatherAt(point, now)]);
   const area = scoreArea(point, new FeatureIndex(features, reports), {
     at: now,
     tz: appTimezone(),
     raining: !!weather?.isRaining,
     foggy: !!weather?.foggy,
   });
-  return json({ area, weather: weather && { isRaining: weather.isRaining, foggy: weather.foggy }, at: now.toISOString() });
+  return json({ area, source: features.source, weather: weather && { isRaining: weather.isRaining, foggy: weather.foggy }, at: now.toISOString() });
 });

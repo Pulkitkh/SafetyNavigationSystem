@@ -18,6 +18,8 @@ SafeNav measures the parameters that open data can support. "Gender usage" and "
    - transit (150 m), police (1.5 km) and hospitals (1 km);
    - isolating land use touching the route (20 m).
 
+   If Overpass doesn't answer within 8 seconds, the same features come from OpenStreetMap vector tiles (OpenMapTiles schema, zoom 14): roads with class, footway/steps/pedestrian subclass, surface, tunnels; points of interest with names; building footprints; land use. Tiles carry no street lamps, `lit`/`sidewalk` tags or opening hours, so lighting falls back to the road-class priors, opening times to typical Indian hours, and confidence is reduced and explained in the UI.
+
    Community reports come from the database. Weather comes from Open-Meteo's hourly forecast for the hour at the middle of the walk, so a walk planned for later uses that hour's forecast.
 3. **Sampling.** The route is sampled every 20 m and grouped into 100 m segments. Each sample is matched to the nearest mapped road within 20 m, or 35 m as a fallback.
 4. **Timing.** Each segment is evaluated at its own ETA (departure plus distance-proportional travel time), so a shop that closes while you walk counts as closed. The light period (day, twilight, night or late night) comes from the sun position at the route midpoint.

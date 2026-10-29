@@ -58,6 +58,8 @@ export interface AreaSafety {
   nearestHaven: NearbyPlace | null;
   stats: { streetsM: number; litShare: number | null; openPlaces: number; cctv: number; reports: number };
   confidence: "high" | "medium" | "low";
+  /** Set when the score had to use the lighter vector-tile data. */
+  dataNote?: string;
 }
 
 export interface AreaContext {
@@ -195,7 +197,8 @@ export function scoreArea(point: LngLat, index: FeatureIndex, ctx: AreaContext):
   if (weights.lighting > 0 && lightingMapped && litShare != null && litShare >= 0.6) highlights.push("Most mapped streets here are lit");
   if (cctv) highlights.push(`${cctv} mapped CCTV camera${cctv > 1 ? "s" : ""}`);
 
-  const coverage = mean([samples.length > 1 ? 1 : 0, litKnown.length / samples.length, buildingsMapped ? 1 : 0]);
+  const fromTiles = index.source === "tiles";
+  const coverage = mean([samples.length > 1 ? 1 : 0, litKnown.length / samples.length, buildingsMapped ? 1 : 0, ...(fromTiles ? [0.2] : [])]);
   open.sort((a, b) => a.distance - b.distance);
   return {
     score,
@@ -210,5 +213,8 @@ export function scoreArea(point: LngLat, index: FeatureIndex, ctx: AreaContext):
     nearestHaven: haven,
     stats: { streetsM, litShare: litShare == null ? null : Math.round(litShare * 100) / 100, openPlaces: open.length, cctv, reports },
     confidence: coverage >= 0.6 ? "high" : coverage >= 0.3 ? "medium" : "low",
+    ...(fromTiles
+      ? { dataNote: "Live street details (lamps, opening hours) were unavailable, so this uses the map's base data and typical opening hours." }
+      : {}),
   };
 }

@@ -34,7 +34,8 @@ Known limit: browsers pause location when the screen is locked or the app is in 
 
 | Data | Service | Used for |
 | --- | --- | --- |
-| Roads, lights, footpaths, shops, opening hours, land use, police, hospitals, transit, CCTV | OpenStreetMap via [Overpass API](https://overpass-api.de) | Safety factors |
+| Roads, lights, footpaths, shops, opening hours, land use, police, hospitals, transit, CCTV | OpenStreetMap via [Overpass API](https://overpass-api.de) | Safety factors (richest source) |
+| Roads, footpaths, steps, places, buildings, land use | OpenStreetMap [vector tiles](https://openmaptiles.org/schema/) from [OpenFreeMap](https://openfreemap.org) | Safety factors when Overpass is slow or blocked (no street lamps or opening hours, so confidence is lower) |
 | Walking and driving routes with alternatives | [OSRM](https://project-osrm.org) on routing.openstreetmap.de (car also on router.project-osrm.org) | Routes and turn-by-turn steps |
 | Fallback and wheelchair routing | [Valhalla](https://valhalla.github.io/valhalla/) on valhalla1.openstreetmap.de | When OSRM is down; step-free routes |
 | Place search (autocomplete) | [Photon](https://photon.komoot.io) | Search as you type |
@@ -101,6 +102,7 @@ The public data services rate-limit and go down independently, so every call is 
 - **Second engine:** if every OSRM server fails, routes come from Valhalla.
 - **Truncated data rejected:** Overpass reports timeouts as HTTP 200 with partial data. These responses are rejected and never cached, so routes are never silently scored on empty data.
 - **Stale cache:** expired cache entries are kept for 7 days and served when every upstream is down.
+- **Second street-data source:** the public Overpass servers are often overloaded and block shared cloud IPs, Render's included. Every request also fetches OpenStreetMap vector tiles from the OpenFreeMap CDN. If Overpass hasn't answered within 8 seconds, scoring uses the tiles, and Overpass is skipped for the next 2 minutes. When Overpass does answer, its richer result is cached for next time.
 - **Directions always returned:** if street data is unavailable, you still get routes and turn-by-turn directions, clearly marked as unscored.
 - **Bounded time:** routing and street data each have a time budget, so a plan request finishes within the function limit.
 - **`GET /api/health`** probes every upstream and the database: 200 if safe routing works, 503 if not. Point an uptime monitor at it. `?deep=0` checks only the database.

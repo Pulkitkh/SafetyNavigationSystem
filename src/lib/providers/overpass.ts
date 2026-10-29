@@ -46,6 +46,8 @@ export interface OsmFeatures {
   areas: Area[];
   /** Footprint bounds of buildings near the route: homes and shops facing the street. */
   buildings?: BBox[];
+  /** "tiles" when Overpass was unavailable and vector tiles were used (no lamps, lit tags or opening hours). */
+  source?: "overpass" | "tiles";
 }
 
 interface OverpassElement {

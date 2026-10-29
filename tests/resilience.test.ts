@@ -215,6 +215,8 @@ describe("health summary", () => {
     const r = (service: string, ok: boolean) => ({ service, url: "", ok, ms: 1 });
     expect(summarise([r("routing (walk)", false), r("routing fallback (Valhalla)", true), r("street data (Overpass)", false), r("street data (Overpass)", true)]).ok).toBe(true);
     expect(summarise([r("routing (walk)", true), r("street data (Overpass)", false)]).ok).toBe(false);
+    // Overpass down but the vector tiles up: scoring still works.
+    expect(summarise([r("routing (walk)", true), r("street data (Overpass)", false), r("street data (map tiles)", true)]).ok).toBe(true);
   });
 });
 

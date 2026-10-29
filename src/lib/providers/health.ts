@@ -35,6 +35,7 @@ export async function checkUpstreams(): Promise<ProbeResult[]> {
     if (base !== "off") probes.push(probe("routing fallback (Valhalla)", `${base}/status`));
   }
   for (const url of endpoints(process.env.OVERPASS_URL, OVERPASS_MIRRORS)) probes.push(probe("street data (Overpass)", url.replace(/\/interpreter$/, "/status")));
+  probes.push(probe("street data (map tiles)", process.env.TILES_TILEJSON_URL || "https://tiles.openfreemap.org/planet"));
   probes.push(probe("place search (Photon)", `${process.env.PHOTON_URL || "https://photon.komoot.io"}/api/?q=delhi&limit=1`));
   probes.push(probe("reverse geocoding (Nominatim)", `${process.env.NOMINATIM_URL || "https://nominatim.openstreetmap.org"}/status?format=json`));
   probes.push(probe("weather (Open-Meteo)", `${process.env.OPEN_METEO_URL || "https://api.open-meteo.com"}/v1/forecast?latitude=28.6&longitude=77.2&hourly=visibility&forecast_days=1`));
@@ -45,8 +46,9 @@ export async function checkUpstreams(): Promise<ProbeResult[]> {
 export function summarise(results: ProbeResult[]) {
   const services = new Map<string, boolean>();
   for (const r of results) services.set(r.service, (services.get(r.service) ?? false) || r.ok);
-  const critical = ["routing (walk)", "street data (Overpass)"];
   const walkUsable = services.get("routing (walk)") || services.get("routing fallback (Valhalla)");
-  const ok = !!walkUsable && !!services.get(critical[1]);
+  // Scoring works from either Overpass (richer) or the vector tiles.
+  const streetUsable = services.get("street data (Overpass)") || services.get("street data (map tiles)");
+  const ok = !!walkUsable && !!streetUsable;
   return { ok, services: Object.fromEntries(services) };
 }

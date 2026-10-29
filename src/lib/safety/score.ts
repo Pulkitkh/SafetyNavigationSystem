@@ -122,6 +122,7 @@ export class FeatureIndex {
   readonly reports = new GridIndex<CommunityReport>(120);
   readonly buildings = new GridIndex<BBox>(60);
   readonly buildingCount: number;
+  readonly source: "overpass" | "tiles";
   readonly areas: { area: Area; bbox: BBox }[];
   private readonly ohCache = new Map<string, OpeningHours | null>();
 
@@ -152,6 +153,7 @@ export class FeatureIndex {
       for (const p of pts) this.buildings.insert(p, b);
     }
     this.buildingCount = features.buildings?.length ?? 0;
+    this.source = features.source ?? "overpass";
     this.areas = features.areas.map((area) => ({ area, bbox: bboxOf(area.ring) }));
   }
 
@@ -649,6 +651,10 @@ export function scoreRoute(
     if (ohKnown / ohTotal < 0.3) notes.push("Few places list opening hours; open/closed is estimated from typical hours.");
   }
   if (!buildingsMapped) notes.push("Buildings are barely mapped along this route, so frontage is not judged.");
+  if (index.source === "tiles") {
+    notes.push("Live street details (street lamps, footpath tags, opening hours) were unavailable, so this uses the map's base data and typical opening hours.");
+    coverageParts.push(0.2);
+  }
   const coverage = coverageParts.reduce((a, b) => a + b, 0) / coverageParts.length;
 
   const highlights: string[] = [];

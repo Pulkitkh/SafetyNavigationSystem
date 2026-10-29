@@ -24,6 +24,7 @@ interface Help {
   hospitals: Place[];
   pharmacies: Place[];
   fuel: Place[];
+  source?: "overpass" | "tiles";
 }
 
 const TIPS = [
@@ -131,7 +132,7 @@ export default function HelpPage() {
 
         {section("Police stations", Shield, help?.police, "No police station mapped within 3 km.", "Police station")}
         {section("Hospitals", Hospital, help?.hospitals, "No hospital mapped within 3 km.", "Hospital")}
-        {help && help.pharmacies.length > 0 && section("24-hour pharmacies", Pill, help.pharmacies, "", "Pharmacy")}
+        {help && help.pharmacies.length > 0 && section(help.source === "tiles" ? "Pharmacies" : "24-hour pharmacies", Pill, help.pharmacies, "", "Pharmacy")}
         {help && help.fuel.length > 0 && section("Petrol pumps (safe places to wait)", Fuel, help.fuel, "", "Petrol pump")}
 
         <DeviceSettings />
