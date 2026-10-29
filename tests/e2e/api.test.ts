@@ -189,7 +189,7 @@ run("API end to end", () => {
     const sub = await guardian.call(`/api/guardian/${inviteToken}/subscribe`, { method: "POST", json: { subscription: { endpoint: `https://fcm.googleapis.com/fcm/send/e2e-${unique}`, keys } } });
     expect(sub.status).toBe(201);
     const list = await ravi.call("/api/contacts");
-    expect(list.body.contacts.find((c: { id: string }) => c.id === id).alerts).toEqual({ push: 1, telegram: 0 });
+    expect(list.body.contacts.find((c: { id: string }) => c.id === id).alerts).toEqual({ push: 1, telegram: 0, whatsapp: 0 });
 
     // SOS fans out on its own; this endpoint isn't a real subscription, so the push service refuses it.
     const t = token();

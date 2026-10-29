@@ -34,7 +34,7 @@ export interface AlertPayload {
 export interface DeliveryResult {
   contactId: string;
   deviceId: string;
-  channel: "push" | "telegram" | "whatsapp";
+  channel: "push" | "telegram" | "whatsapp" | "fcm";
   ok: boolean;
   error?: string;
 }

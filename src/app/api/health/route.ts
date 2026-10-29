@@ -18,7 +18,7 @@ export const GET = route(async (req: NextRequest) => {
   rateLimit(req, "health", 10, 60_000);
   let database = true;
   try {
-    await (await getDb()).run(sql`select 1`);
+    await (await getDb()).execute(sql`select 1`);
   } catch {
     database = false;
   }

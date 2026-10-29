@@ -65,12 +65,12 @@ export async function currentUser(): Promise<User | null> {
   const token = jar.get(SESSION_COOKIE)?.value;
   if (!token) return null;
   const db = await getDb();
-  const row = await db
+  const [row] = await db
     .select({ user: schema.users, expiresAt: schema.sessions.expiresAt })
     .from(schema.sessions)
     .innerJoin(schema.users, eq(schema.users.id, schema.sessions.userId))
     .where(eq(schema.sessions.tokenHash, sha256(token)))
-    .get();
+    .limit(1);
   if (!row || row.expiresAt.getTime() < Date.now()) return null;
   return row.user;
 }

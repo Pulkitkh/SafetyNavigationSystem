@@ -1,12 +1,15 @@
-import { sql } from "drizzle-orm";
-import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { boolean, doublePrecision, index, integer, pgSchema, primaryKey, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
-const createdAt = () =>
-  integer("created_at", { mode: "timestamp_ms" })
-    .notNull()
-    .default(sql`(unixepoch() * 1000)`);
+/**
+ * Everything lives in its own Postgres schema. On Supabase this keeps the
+ * tables out of the auto-generated public REST API.
+ */
+export const safenav = pgSchema("safenav");
 
-export const users = sqliteTable(
+const ts = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
+const createdAt = () => ts("created_at").notNull().defaultNow();
+
+export const users = safenav.table(
   "users",
   {
     id: text("id").primaryKey(),
@@ -15,13 +18,20 @@ export const users = sqliteTable(
     phone: text("phone"),
     passwordHash: text("password_hash").notNull(),
     // Escalate to SOS when a safety check-in is not answered in time.
-    autoSos: integer("auto_sos", { mode: "boolean" }).notNull().default(true),
+    autoSos: boolean("auto_sos").notNull().default(true),
+    // Always-on location sharing with linked trusted contacts (opt-in).
+    shareLive: boolean("share_live").notNull().default(false),
+    liveLat: doublePrecision("live_lat"),
+    liveLng: doublePrecision("live_lng"),
+    liveAccuracy: doublePrecision("live_accuracy"),
+    liveBattery: doublePrecision("live_battery"),
+    liveAt: ts("live_at"),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("users_email_idx").on(t.email)],
 );
 
-export const sessions = sqliteTable(
+export const sessions = safenav.table(
   "sessions",
   {
     // SHA-256 of the cookie token; the raw token never touches the database.
@@ -29,13 +39,13 @@ export const sessions = sqliteTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    expiresAt: ts("expires_at").notNull(),
     createdAt: createdAt(),
   },
   (t) => [index("sessions_user_idx").on(t.userId)],
 );
 
-export const contacts = sqliteTable(
+export const contacts = safenav.table(
   "contacts",
   {
     id: text("id").primaryKey(),
@@ -45,32 +55,34 @@ export const contacts = sqliteTable(
     name: text("name").notNull(),
     phone: text("phone").notNull(),
     relation: text("relation").notNull(),
-    isPrimary: integer("is_primary", { mode: "boolean" }).notNull().default(false),
+    isPrimary: boolean("is_primary").notNull().default(false),
+    // The contact's own SafeNav account, once they accept the invite while signed in.
+    guardianUserId: text("guardian_user_id").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },
-  (t) => [index("contacts_user_idx").on(t.userId)],
+  (t) => [index("contacts_user_idx").on(t.userId), index("contacts_guardian_idx").on(t.guardianUserId)],
 );
 
-export const reports = sqliteTable(
+export const reports = safenav.table(
   "reports",
   {
     id: text("id").primaryKey(),
     userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
     category: text("category").notNull(),
-    lat: real("lat").notNull(),
-    lng: real("lng").notNull(),
+    lat: doublePrecision("lat").notNull(),
+    lng: doublePrecision("lng").notNull(),
     note: text("note"),
     // When the reported situation happened (not when it was filed).
-    observedAt: integer("observed_at", { mode: "timestamp_ms" }).notNull(),
+    observedAt: ts("observed_at").notNull(),
     upvotes: integer("upvotes").notNull().default(0),
     flags: integer("flags").notNull().default(0),
-    hidden: integer("hidden", { mode: "boolean" }).notNull().default(false),
+    hidden: boolean("hidden").notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [index("reports_geo_idx").on(t.lat, t.lng), index("reports_observed_idx").on(t.observedAt)],
 );
 
-export const reportVotes = sqliteTable(
+export const reportVotes = safenav.table(
   "report_votes",
   {
     reportId: text("report_id")
@@ -85,7 +97,7 @@ export const reportVotes = sqliteTable(
   (t) => [primaryKey({ columns: [t.reportId, t.userId] })],
 );
 
-export const trips = sqliteTable(
+export const trips = safenav.table(
   "trips",
   {
     id: text("id").primaryKey(),
@@ -97,42 +109,42 @@ export const trips = sqliteTable(
     mode: text("mode", { enum: ["walk", "ride"] }).notNull(),
     status: text("status", { enum: ["active", "alert", "sos", "ended"] }).notNull().default("active"),
     destLabel: text("dest_label").notNull(),
-    destLat: real("dest_lat").notNull(),
-    destLng: real("dest_lng").notNull(),
-    // Planned route as an encoded [lng,lat][] JSON string, for viewers and deviation checks.
+    destLat: doublePrecision("dest_lat").notNull(),
+    destLng: doublePrecision("dest_lng").notNull(),
+    // Planned route as a [lng,lat][] JSON string, for viewers and deviation checks.
     routeJson: text("route_json").notNull(),
-    expectedArrival: integer("expected_arrival", { mode: "timestamp_ms" }).notNull(),
+    expectedArrival: ts("expected_arrival").notNull(),
     vehicleType: text("vehicle_type"),
     vehiclePlate: text("vehicle_plate"),
     vehicleNote: text("vehicle_note"),
-    lastLat: real("last_lat"),
-    lastLng: real("last_lng"),
-    lastAccuracy: real("last_accuracy"),
-    lastBattery: real("last_battery"),
-    lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }),
+    lastLat: doublePrecision("last_lat"),
+    lastLng: doublePrecision("last_lng"),
+    lastAccuracy: doublePrecision("last_accuracy"),
+    lastBattery: doublePrecision("last_battery"),
+    lastSeenAt: ts("last_seen_at"),
     alertReason: text("alert_reason"),
-    startedAt: createdAt(),
-    endedAt: integer("ended_at", { mode: "timestamp_ms" }),
+    startedAt: ts("created_at").notNull().defaultNow(),
+    endedAt: ts("ended_at"),
   },
   (t) => [uniqueIndex("trips_share_idx").on(t.shareTokenHash), index("trips_user_idx").on(t.userId, t.status)],
 );
 
-export const tripPoints = sqliteTable(
+export const tripPoints = safenav.table(
   "trip_points",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: serial("id").primaryKey(),
     tripId: text("trip_id")
       .notNull()
       .references(() => trips.id, { onDelete: "cascade" }),
-    lat: real("lat").notNull(),
-    lng: real("lng").notNull(),
-    accuracy: real("accuracy"),
-    recordedAt: integer("recorded_at", { mode: "timestamp_ms" }).notNull(),
+    lat: doublePrecision("lat").notNull(),
+    lng: doublePrecision("lng").notNull(),
+    accuracy: doublePrecision("accuracy"),
+    recordedAt: ts("recorded_at").notNull(),
   },
   (t) => [index("trip_points_trip_idx").on(t.tripId, t.recordedAt)],
 );
 
-export const sosEvents = sqliteTable(
+export const sosEvents = safenav.table(
   "sos_events",
   {
     id: text("id").primaryKey(),
@@ -140,10 +152,10 @@ export const sosEvents = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     tripId: text("trip_id").references(() => trips.id, { onDelete: "set null" }),
-    lat: real("lat"),
-    lng: real("lng"),
+    lat: doublePrecision("lat"),
+    lng: doublePrecision("lng"),
     trigger: text("trigger", { enum: ["manual", "missed_checkin", "deviation"] }).notNull(),
-    // "gateway" when SMS went out automatically, "device" when the phone's composer was used.
+    // Which automatic channels ran ("alerts", "gateway:<provider>"), or "device" when none did.
     channel: text("channel").notNull(),
     delivered: integer("delivered").notNull().default(0),
     failed: integer("failed").notNull().default(0),
@@ -154,10 +166,10 @@ export const sosEvents = sqliteTable(
 
 /**
  * A link a user sends to one trusted contact once. Opening it lets that contact
- * receive SOS alerts automatically (app notification or Telegram), with no
- * action needed from the user at the moment of danger.
+ * receive SOS alerts automatically, with no action needed from the user at the
+ * moment of danger.
  */
-export const guardianInvites = sqliteTable("guardian_invites", {
+export const guardianInvites = safenav.table("guardian_invites", {
   // SHA-256 of the token in the invite link.
   tokenHash: text("token_hash").primaryKey(),
   contactId: text("contact_id")
@@ -166,16 +178,16 @@ export const guardianInvites = sqliteTable("guardian_invites", {
   createdAt: createdAt(),
 });
 
-/** Where a trusted contact receives alerts: a browser/app push subscription or a Telegram chat. */
-export const guardianDevices = sqliteTable(
+/** Where a trusted contact receives alerts: browser push, Telegram, WhatsApp, or the SafeNav app (FCM). */
+export const guardianDevices = safenav.table(
   "guardian_devices",
   {
     id: text("id").primaryKey(),
     contactId: text("contact_id")
       .notNull()
       .references(() => contacts.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["push", "telegram", "whatsapp"] }).notNull(),
-    // Push: the subscription endpoint. Telegram: the chat id. WhatsApp: the phone number, digits only.
+    kind: text("kind", { enum: ["push", "telegram", "whatsapp", "fcm"] }).notNull(),
+    // Push: the subscription endpoint. Telegram: the chat id. WhatsApp: the phone number, digits only. FCM: the device token.
     address: text("address").notNull(),
     // Push only: the subscription's p256dh and auth keys as JSON.
     keys: text("keys"),
@@ -186,30 +198,60 @@ export const guardianDevices = sqliteTable(
   (t) => [uniqueIndex("guardian_devices_addr_idx").on(t.contactId, t.kind, t.address), index("guardian_devices_contact_idx").on(t.contactId)],
 );
 
+/** Phones where a signed-in user runs the SafeNav app, so an SOS from someone they protect can ring them. */
+export const appDevices = safenav.table(
+  "app_devices",
+  {
+    token: text("token").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    platform: text("platform").notNull(),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("app_devices_user_idx").on(t.userId)],
+);
+
 /** One alert sent to one contact over one channel, so the person in danger can see who was reached. */
-export const alertDeliveries = sqliteTable(
+export const alertDeliveries = safenav.table(
   "alert_deliveries",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: serial("id").primaryKey(),
     tripId: text("trip_id")
       .notNull()
       .references(() => trips.id, { onDelete: "cascade" }),
     contactId: text("contact_id").references(() => contacts.id, { onDelete: "set null" }),
     deviceId: text("device_id"),
     kind: text("kind").notNull(), // sos | safe | journey
-    channel: text("channel").notNull(), // push | telegram | sms_gateway
-    ok: integer("ok", { mode: "boolean" }).notNull(),
+    channel: text("channel").notNull(), // push | telegram | whatsapp | fcm | sms_gateway
+    ok: boolean("ok").notNull(),
     error: text("error"),
     // Set when the contact opens the live-tracking page from this alert.
-    seenAt: integer("seen_at", { mode: "timestamp_ms" }),
+    seenAt: ts("seen_at"),
     createdAt: createdAt(),
   },
   (t) => [index("alert_deliveries_trip_idx").on(t.tripId)],
 );
 
+/** A trusted contact's answer to an SOS ("I'm on my way", "Calling you"), shown on the SOS screen. */
+export const sosResponses = safenav.table(
+  "sos_responses",
+  {
+    tripId: text("trip_id")
+      .notNull()
+      .references(() => trips.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contacts.id, { onDelete: "cascade" }),
+    response: text("response", { enum: ["on_my_way", "calling", "called_112"] }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.tripId, t.contactId] })],
+);
+
 // Shared response cache for slow public APIs (Overpass, routing, geocoding).
-export const apiCache = sqliteTable("api_cache", {
+export const apiCache = safenav.table("api_cache", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
-  expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+  expiresAt: ts("expires_at").notNull(),
 });

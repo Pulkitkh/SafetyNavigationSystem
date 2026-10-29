@@ -14,12 +14,12 @@ export const GET = route(async (req: NextRequest, { params }: Ctx) => {
   const { token } = await params;
   if (!shareToken.safeParse(token).success) throw new ApiError(404, "This link is not valid");
   const db = await getDb();
-  const row = await db
+  const [row] = await db
     .select({ trip: schema.trips, name: schema.users.name, phone: schema.users.phone })
     .from(schema.trips)
     .innerJoin(schema.users, eq(schema.users.id, schema.trips.userId))
     .where(eq(schema.trips.shareTokenHash, sha256(token)))
-    .get();
+    .limit(1);
   if (!row || !isShareVisible(row.trip)) throw new ApiError(404, "This link has expired or is not valid");
   const t = row.trip;
   const points = await db
