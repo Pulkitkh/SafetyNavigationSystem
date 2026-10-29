@@ -34,7 +34,13 @@ interface Props {
   className?: string;
 }
 
-const STYLE_URL = process.env.NEXT_PUBLIC_MAP_STYLE_URL || "https://tiles.openfreemap.org/styles/liberty";
+const STYLE_URL = process.env.NEXT_PUBLIC_MAP_STYLE_URL || "https://tiles.openfreemap.org/styles/positron";
+// A dark basemap at night is easier on the eyes and doesn't light up the face in a dark street.
+const DARK_STYLE_URL = process.env.NEXT_PUBLIC_MAP_DARK_STYLE_URL || "https://tiles.openfreemap.org/styles/dark";
+
+function isDark() {
+  return typeof document !== "undefined" && document.documentElement.classList.contains("dark");
+}
 const INDIA_CENTER: LngLat = [78.9629, 22.5937];
 
 // Used if the tile style cannot load (offline), so routes and markers still draw.
@@ -45,15 +51,27 @@ const FALLBACK_STYLE: StyleSpecification = {
 };
 
 
-const MARKER_STYLE: Record<MapMarker["kind"], { bg: string; text: string }> = {
-  weak: { bg: "#dc2626", text: "!" },
-  report: { bg: "#7c3aed", text: "•" },
-  police: { bg: "#1d4ed8", text: "P" },
-  hospital: { bg: "#be123c", text: "H" },
-  dest: { bg: "#0f172a", text: "◎" },
-  start: { bg: "#0f766e", text: "●" },
-  safe: { bg: "#15803d", text: "✓" },
-  place: { bg: "#64748b", text: "•" },
+// Lucide icon paths, so pins match the rest of the interface (no emoji or font glyphs).
+const ICON = {
+  alert: '<path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/>',
+  flag: '<path d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.3 2 1.3 0 2.5-.4 3.3-.9a1 1 0 0 1 1.4.9v10a1 1 0 0 1-.4.8 6 6 0 0 1-4.3 1.2c-2.3 0-4.3-2-7.3-2a6 6 0 0 0-4 1.5"/>',
+  shield: '<path d="M20 13c0 5-3.5 7.5-7.7 9a1 1 0 0 1-.6 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z"/>',
+  plus: '<path d="M12 5v14"/><path d="M5 12h14"/>',
+  dest: '<path d="M20 10c0 5-5.5 10.2-7.4 11.8a1 1 0 0 1-1.2 0C9.5 20.2 4 15 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
+  start: '<circle cx="12" cy="12" r="4" fill="currentColor"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  dot: '<circle cx="12" cy="12" r="3" fill="currentColor"/>',
+};
+
+const MARKER_STYLE: Record<MapMarker["kind"], { bg: string; icon: string }> = {
+  weak: { bg: "#c81e3c", icon: ICON.alert },
+  report: { bg: "#7c3aed", icon: ICON.flag },
+  police: { bg: "#1f5fbf", icon: ICON.shield },
+  hospital: { bg: "#b9173a", icon: ICON.plus },
+  dest: { bg: "#5b3fd6", icon: ICON.dest },
+  start: { bg: "#0f7a55", icon: ICON.start },
+  safe: { bg: "#0f7a55", icon: ICON.check },
+  place: { bg: "#6b6884", icon: ICON.dot },
 };
 
 const emptyFC = (): GeoJSON.FeatureCollection => ({ type: "FeatureCollection", features: [] });
@@ -74,6 +92,8 @@ export default function MapView({
   const mapRef = useRef<MLMap | null>(null);
   const markerObjs = useRef<maplibregl.Marker[]>([]);
   const [ready, setReady] = useState(false);
+  // Bumped whenever the style is replaced (theme change), so data layers are drawn again.
+  const [styleVersion, setStyleVersion] = useState(0);
   const handlers = useRef({ onSelectRoute, onMapClick });
   handlers.current = { onSelectRoute, onMapClick };
 
@@ -81,7 +101,7 @@ export default function MapView({
     if (!container.current) return;
     const map = new maplibregl.Map({
       container: container.current,
-      style: STYLE_URL,
+      style: isDark() ? DARK_STYLE_URL : STYLE_URL,
       center: INDIA_CENTER,
       zoom: 4,
       attributionControl: { compact: true },
@@ -126,7 +146,7 @@ export default function MapView({
         source: "routes",
         filter: ["==", ["get", "selected"], true],
         layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": "#6d28d9", "line-width": 6 },
+        paint: { "line-color": "#5b3fd6", "line-width": 6 },
       });
       map.addLayer({
         id: "segments",
@@ -140,7 +160,7 @@ export default function MapView({
         type: "line",
         source: "trail",
         layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": "#7c3aed", "line-width": 4, "line-dasharray": [1, 1.5] },
+        paint: { "line-color": "#7c5cff", "line-width": 4, "line-dasharray": [1, 1.5] },
       });
       map.addLayer({
         id: "user-accuracy",
@@ -165,8 +185,19 @@ export default function MapView({
       map.on("mouseenter", "routes-alt", () => (map.getCanvas().style.cursor = "pointer"));
       map.on("mouseleave", "routes-alt", () => (map.getCanvas().style.cursor = ""));
       setReady(true);
+      setStyleVersion((v) => v + 1);
     };
     map.on("style.load", setup);
+    let dark = isDark();
+    const onTheme = () => {
+      if (isDark() === dark) return;
+      dark = isDark();
+      map.setStyle(dark ? DARK_STYLE_URL : STYLE_URL);
+    };
+    window.addEventListener("safenav:theme", onTheme);
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onScheme = () => setTimeout(onTheme, 0);
+    mq.addEventListener("change", onScheme);
     // Keep the attribution as a small (i) button rather than a panel covering the map.
     map.once("load", () => container.current?.querySelector(".maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show"));
     map.on("click", (e) => {
@@ -175,6 +206,8 @@ export default function MapView({
     });
 
     return () => {
+      window.removeEventListener("safenav:theme", onTheme);
+      mq.removeEventListener("change", onScheme);
       map.remove();
       mapRef.current = null;
       setReady(false);
@@ -203,7 +236,7 @@ export default function MapView({
       })),
     });
     if (map.getLayer("routes-alt")) map.moveLayer("routes-alt", "routes-casing");
-  }, [routes, selectedId, ready]);
+  }, [routes, selectedId, ready, styleVersion]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -213,7 +246,7 @@ export default function MapView({
         ? { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: trail } }
         : emptyFC(),
     );
-  }, [trail, ready]);
+  }, [trail, ready, styleVersion]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -224,7 +257,7 @@ export default function MapView({
         : emptyFC(),
     );
     if (user && followUser) map.easeTo({ center: user.point, zoom: Math.max(map.getZoom(), 16), duration: 600 });
-  }, [user, followUser, ready]);
+  }, [user, followUser, ready, styleVersion]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -235,7 +268,7 @@ export default function MapView({
       const s = MARKER_STYLE[m.kind];
       el.className = "map-pin";
       el.style.background = s.bg;
-      el.textContent = s.text;
+      el.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${s.icon}</svg>`;
       if (m.label) el.title = m.label;
       el.setAttribute("aria-label", m.label ?? m.kind);
       const marker = new maplibregl.Marker({ element: el }).setLngLat(m.point);

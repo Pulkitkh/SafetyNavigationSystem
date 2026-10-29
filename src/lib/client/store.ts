@@ -13,6 +13,8 @@ export interface StoredContact {
   phone: string;
   relation: string;
   isPrimary: boolean;
+  /** Devices that get this contact's SOS alerts automatically. */
+  alerts?: { push: number; telegram: number };
 }
 
 export interface ActiveJourney {
@@ -43,9 +45,27 @@ export interface Prefs {
   voice: boolean;
   /** Shaking the phone hard starts an SOS countdown. */
   shakeSos: boolean;
+  /** Seconds to cancel a shake-triggered SOS before it sends; 0 sends at once. */
+  shakeCountdownS: number;
+  /** Android app: keep listening for a shake with the screen locked. */
+  shakeLocked: boolean;
+  /** Android app: SOS texts contacts from the phone's SIM straight away. */
+  autoSms: boolean;
+  /** Journeys tell contacts with alerts turned on that you've set off. */
+  notifyOnStart: boolean;
 }
 
-export const DEFAULT_PREFS: Prefs = { stepFree: false, voice: true, shakeSos: false };
+export const DEFAULT_PREFS: Prefs = {
+  stepFree: false,
+  voice: true,
+  shakeSos: false,
+  shakeCountdownS: 3,
+  shakeLocked: true,
+  autoSms: true,
+  notifyOnStart: true,
+};
+
+export type Theme = "system" | "light" | "dark";
 
 /** A place remembered on this device for quick reuse. */
 export interface SavedPlace {
@@ -77,6 +97,8 @@ const KEYS = {
   journey: "safenav.journey",
   fix: "safenav.lastFix",
   user: "safenav.user",
+  theme: "safenav.theme",
+  sosDrill: "safenav.sosDrill",
 };
 
 function read<T>(key: string): T | null {
@@ -128,6 +150,21 @@ export const store = {
   setJourney: (j: ActiveJourney | null) => write(KEYS.journey, j),
   lastFix: () => read<LastFix>(KEYS.fix),
   setLastFix: (f: LastFix) => write(KEYS.fix, f),
+  theme: (): Theme => read<Theme>(KEYS.theme) ?? "system",
+  setTheme: (t: Theme) => {
+    write(KEYS.theme, t);
+    applyTheme(t);
+  },
+  /** When the user last practised an SOS, for the safety checklist. */
+  sosDrillAt: () => read<number>(KEYS.sosDrill),
+  setSosDrillAt: (t: number) => write(KEYS.sosDrill, t),
   userName: () => read<string>(KEYS.user),
   setUserName: (n: string | null) => write(KEYS.user, n),
 };
+
+export function applyTheme(t: Theme) {
+  if (typeof document === "undefined") return;
+  const dark = t === "dark" || (t === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.classList.toggle("dark", dark);
+  window.dispatchEvent(new Event("safenav:theme"));
+}

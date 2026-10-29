@@ -1,18 +1,21 @@
 "use client";
 
-import { Accessibility, ArrowUpDown, Car, Clock, Footprints, LocateFixed, MapPin, MessageSquareWarning, Moon, PhoneCall, ScanSearch, ShieldCheck, Star, Sun, Sunset, Timer, X } from "lucide-react";
+import { Accessibility, ArrowRight, ArrowUpDown, Car, ChevronRight, Clock, CloudRain, Footprints, Info, LocateFixed, MapPin, MessageSquareWarning, Moon, PhoneCall, Radio, ScanSearch, ShieldCheck, Star, Sun, Sunset, Timer, TriangleAlert, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import Map, { type MapMarker, type MapRoute } from "@/components/Map";
 import { PlaceSearch, type PlaceValue } from "@/components/PlaceSearch";
 import { RouteCard } from "@/components/RouteCard";
+import { initials } from "@/components/Sos";
+import { Callout, IconTile, ProgressRing, Segmented, type Tone } from "@/components/ui";
 import { api, newShareToken } from "@/lib/client/api";
 import { useGeolocation, usePrefs, useSession } from "@/lib/client/hooks";
 import { store, type SavedPlace } from "@/lib/client/store";
 import type { LngLat } from "@/lib/geo";
 import { VEHICLE_LABELS, VEHICLE_TYPES, type VehicleType } from "@/lib/phone";
 import type { PlanResult } from "@/lib/safety/plan";
+import { useReadiness } from "@/lib/client/readiness";
 import { lightPeriod, type LightPeriod } from "@/lib/time";
 
 type Mode = "walk" | "ride";
@@ -22,23 +25,29 @@ function localDateTimeValue(d: Date) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-const PERIOD_BADGE: Record<LightPeriod, { text: string; icon: typeof Sun; cls: string }> = {
-  day: { text: "Daylight now", icon: Sun, cls: "bg-amber-50 text-amber-800" },
-  twilight: { text: "Dusk: lighting starts to matter", icon: Sunset, cls: "bg-orange-50 text-orange-800" },
-  night: { text: "Dark now: lit, busy streets are preferred", icon: Moon, cls: "bg-indigo-50 text-indigo-800" },
-  late_night: { text: "Late night: most shops are shut", icon: Moon, cls: "bg-slate-900 text-slate-100" },
+const PERIOD_BADGE: Record<LightPeriod, { text: string; icon: typeof Sun; tone: Tone }> = {
+  day: { text: "Daylight", icon: Sun, tone: "caution" },
+  twilight: { text: "Dusk: lighting matters", icon: Sunset, tone: "caution" },
+  night: { text: "Dark: lit, busy streets preferred", icon: Moon, tone: "brand" },
+  late_night: { text: "Late night: most shops shut", icon: Moon, tone: "brand" },
 };
 
-const TOOLS = [
-  { href: "/area", label: "Is it safe here?", text: "Live check of your area", icon: ScanSearch, cls: "bg-emerald-50 text-emerald-700" },
-  { href: "/timer", label: "Safety timer", text: "Auto-SOS if you don't check in", icon: Timer, cls: "bg-sky-50 text-sky-700" },
-  { href: "/fake-call", label: "Fake call", text: "Exit an awkward situation", icon: PhoneCall, cls: "bg-violet-50 text-violet-700" },
-  { href: "/report", label: "Report a spot", text: "Warn others about a place", icon: MessageSquareWarning, cls: "bg-rose-50 text-rose-700" },
+const TOOLS: { href: string; label: string; text: string; icon: typeof Sun; tone: Tone }[] = [
+  { href: "/area", label: "Is it safe here?", text: "Live check of the streets around you", icon: ScanSearch, tone: "good" },
+  { href: "/timer", label: "Safety timer", text: "Auto-SOS if you don't check in", icon: Timer, tone: "info" },
+  { href: "/fake-call", label: "Fake call", text: "A reason to leave, on demand", icon: PhoneCall, tone: "brand" },
+  { href: "/report", label: "Report a spot", text: "Warn others about a place", icon: MessageSquareWarning, tone: "danger" },
 ];
+
+function greeting(d = new Date()) {
+  const h = d.getHours();
+  return h < 5 ? "Stay safe tonight" : h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : h < 21 ? "Good evening" : "Stay safe tonight";
+}
 
 export default function PlanPage() {
   const router = useRouter();
-  const { me } = useSession();
+  const { me, contacts } = useSession();
+  const readiness = useReadiness();
   const [prefs, setPrefs] = usePrefs();
   const geo = useGeolocation();
   const here: LngLat | null = geo.fix ? [geo.fix.lng, geo.fix.lat] : null;
@@ -168,9 +177,10 @@ export default function PlanPage() {
         dest: to.point,
         route: selected.coordinates,
         durationS: selected.duration,
+        notifyContacts: prefs.notifyOnStart,
         ...(mode === "ride" ? { vehicleType: vehicle.type, vehiclePlate: vehicle.plate || undefined, vehicleNote: vehicle.note || undefined } : {}),
       };
-      const { trip } = await api<{ trip: { id: string; expectedArrival: string } }>("/api/trips", { method: "POST", json: body });
+      const { trip, notified } = await api<{ trip: { id: string; expectedArrival: string }; notified?: number }>("/api/trips", { method: "POST", json: body });
       store.setJourney({
         tripId: trip.id,
         shareToken,
@@ -183,7 +193,7 @@ export default function PlanPage() {
         vehicle: mode === "ride" ? [VEHICLE_LABELS[vehicle.type], vehicle.plate.toUpperCase()].filter(Boolean).join(" ") : null,
         startedAt: Date.now(),
       });
-      router.push("/journey?new=1");
+      router.push(`/journey?new=1&notified=${notified ?? 0}`);
     } catch (err) {
       setError((err as Error).message);
       setStarting(false);
@@ -191,10 +201,11 @@ export default function PlanPage() {
   };
 
   const badge = period ? PERIOD_BADGE[period] : null;
+  const firstName = me?.name.split(" ")[0];
 
   return (
-    <main className="flex h-dvh flex-col md:flex-row">
-      <section className={`relative h-[42dvh] shrink-0 md:order-2 md:h-auto md:flex-1 ${pickFor ? "pick-mode" : ""}`}>
+    <main id="main" className="flex h-dvh flex-col md:flex-row">
+      <section className={`relative h-[38dvh] shrink-0 md:order-2 md:h-auto md:flex-1 ${pickFor ? "pick-mode" : ""}`} aria-label="Map">
         <Map
           routes={mapRoutes}
           selectedId={selected?.id}
@@ -204,63 +215,70 @@ export default function PlanPage() {
           markers={markers}
           fitKey={`${plan?.departAt ?? ""}-${to?.point.join(",") ?? ""}-${here ? "h" : ""}`}
         />
+        {!pickFor && (
+          <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3 pt-[max(0.75rem,env(safe-area-inset-top))] md:hidden">
+            <span className="pointer-events-auto flex items-center gap-2 rounded-full bg-surface/95 py-1.5 pl-1.5 pr-3.5 shadow-card backdrop-blur">
+              <span className="hero-gradient flex h-8 w-8 items-center justify-center rounded-full">
+                <ShieldCheck className="h-[18px] w-[18px]" aria-hidden />
+              </span>
+              <span className="text-[15px] font-extrabold tracking-tight text-ink">SafeNav</span>
+            </span>
+            <AccountButton name={me?.name} />
+          </div>
+        )}
+        {badge && !pickFor && (
+          <span className="pointer-events-none absolute bottom-8 left-3 flex items-center gap-1.5 rounded-full bg-surface/95 px-3 py-1.5 text-[13px] font-bold text-ink shadow-card backdrop-blur md:bottom-3">
+            <badge.icon className={`h-4 w-4 ${badge.tone === "caution" ? "text-caution" : "text-brand-ink"}`} aria-hidden />
+            {badge.text}
+          </span>
+        )}
         {pickFor && (
-          <div className="absolute inset-x-3 top-[max(0.75rem,env(safe-area-inset-top))] flex items-center gap-3 rounded-2xl bg-slate-900/90 px-4 py-3 text-sm text-white shadow-lg">
-            <MapPin className="h-5 w-5 shrink-0 text-brand-300" aria-hidden />
+          <div className="absolute inset-x-3 top-[max(0.75rem,env(safe-area-inset-top))] flex items-center gap-3 rounded-2xl bg-ink px-4 py-3 text-[15px] font-semibold text-canvas shadow-float">
+            <MapPin className="h-5 w-5 shrink-0" aria-hidden />
             <span className="flex-1">Tap the map to set your {pickFor === "from" ? "start" : "destination"}</span>
-            <button onClick={() => setPickFor(null)} aria-label="Cancel choosing on map" className="rounded-full p-1 hover:bg-white/10">
-              <X className="h-4 w-4" />
+            <button onClick={() => setPickFor(null)} aria-label="Cancel choosing on map" className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/10">
+              <X className="h-5 w-5" />
             </button>
           </div>
         )}
       </section>
 
-      <section className="sheet relative z-10 -mt-6 flex min-h-0 flex-1 flex-col overflow-y-auto bg-[#f6f5fb] pb-nav md:order-1 md:mt-0 md:w-[440px] md:flex-none md:border-r md:border-slate-200">
-        <div className="mx-auto mt-2 h-1.5 w-10 shrink-0 rounded-full bg-slate-300 md:hidden" aria-hidden />
-        <div className="space-y-3 px-4 pb-3 pt-3 md:pt-[max(1.25rem,env(safe-area-inset-top))]">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <span className="brand-gradient flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-md shadow-brand-500/30">
-                <ShieldCheck className="h-5 w-5" aria-hidden />
-              </span>
-              <div>
-                <h1 className="text-lg font-bold leading-tight tracking-tight text-slate-900">SafeNav</h1>
-                <p className="text-xs text-slate-500">Safest routes, live sharing, SOS</p>
-              </div>
+      <section className="sheet relative z-10 -mt-6 flex min-h-0 flex-1 flex-col overflow-y-auto bg-canvas pb-nav md:order-1 md:mt-0 md:w-[460px] md:flex-none md:border-r md:border-line">
+        <div className="mx-auto mt-2.5 h-1.5 w-10 shrink-0 rounded-full bg-line-strong md:hidden" aria-hidden />
+        <div className="space-y-4 px-4 pb-3 pt-3 md:pt-[max(1.5rem,env(safe-area-inset-top))]">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-ink-2">{greeting()}{firstName ? `, ${firstName}` : ""}</p>
+              <h1 className="text-2xl font-extrabold tracking-tight text-ink">Where are you going?</h1>
             </div>
-            <Link href={me ? "/account" : "/login"} className="rounded-full bg-white px-3 py-1.5 text-sm font-medium text-brand-700 shadow-sm ring-1 ring-slate-200">
-              {me ? me.name.split(" ")[0] : "Sign in"}
-            </Link>
+            <span className="hidden md:block">
+              <AccountButton name={me?.name} />
+            </span>
           </div>
 
           {activeJourney && (
-            <Link href="/journey" className="flex items-center gap-2 rounded-2xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-white" aria-hidden />
-              Journey in progress — tap to return
+            <Link href="/journey" className="flex min-h-14 items-center gap-3 rounded-2xl bg-good px-4 font-bold text-white shadow-card dark:text-[#062217]">
+              <Radio className="h-5 w-5 animate-pulse" aria-hidden />
+              <span className="flex-1">Journey in progress</span>
+              <span className="flex items-center gap-1 text-sm">
+                Return <ChevronRight className="h-4 w-4" aria-hidden />
+              </span>
             </Link>
           )}
 
-          <div className="card space-y-3 p-3">
-            <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 text-sm font-semibold" role="tablist" aria-label="Travel mode">
-              {(["walk", "ride"] as const).map((m) => {
-                const Icon = m === "walk" ? Footprints : Car;
-                return (
-                  <button
-                    key={m}
-                    role="tab"
-                    aria-selected={mode === m}
-                    onClick={() => {
-                      setMode(m);
-                      resetPlan();
-                    }}
-                    className={`flex items-center justify-center gap-2 rounded-lg py-2 transition ${mode === m ? "bg-white text-brand-700 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
-                  >
-                    <Icon className="h-4 w-4" aria-hidden />
-                    {m === "walk" ? "Walk" : "Cab / Auto"}
-                  </button>
-                );
-              })}
-            </div>
+          <div className="card space-y-3 p-3.5">
+            <Segmented
+              label="Travel mode"
+              value={mode}
+              onChange={(m) => {
+                setMode(m);
+                resetPlan();
+              }}
+              options={[
+                { value: "walk", label: "Walk", icon: Footprints },
+                { value: "ride", label: "Cab / Auto", icon: Car },
+              ]}
+            />
 
             <div className="relative space-y-2">
               <PlaceSearch
@@ -276,7 +294,7 @@ export default function PlanPage() {
                 currentPoint={here}
                 onPickOnMap={() => setPickFor("from")}
                 icon={LocateFixed}
-                iconClass="text-emerald-600"
+                iconClass="text-good"
               />
               <PlaceSearch
                 label="Destination"
@@ -289,19 +307,19 @@ export default function PlanPage() {
                 near={here ?? from?.point}
                 onPickOnMap={() => setPickFor("to")}
                 icon={MapPin}
-                iconClass="text-brand-600"
+                iconClass="text-brand-ink"
               />
               <button
                 onClick={swap}
                 aria-label="Swap start and destination"
-                className="absolute right-11 top-1/2 z-10 -translate-y-1/2 rounded-full border border-slate-200 bg-white p-1.5 text-slate-500 shadow-sm hover:text-brand-700"
+                className="absolute right-12 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-surface text-ink-2 shadow-card ring-1 ring-line hover:text-brand-ink"
               >
-                <ArrowUpDown className="h-4 w-4" />
+                <ArrowUpDown className="h-[18px] w-[18px]" />
               </button>
             </div>
 
             {favorites.length > 0 && !to && (
-              <div className="flex gap-2 overflow-x-auto pb-0.5" aria-label="Saved places">
+              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-0.5" aria-label="Saved places">
                 {favorites.slice(0, 6).map((f) => (
                   <button
                     key={f.point.join(",")}
@@ -309,16 +327,16 @@ export default function PlanPage() {
                       setTo({ label: f.label, detail: f.detail, point: f.point });
                       resetPlan();
                     }}
-                    className="flex shrink-0 items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 ring-1 ring-amber-200"
+                    className="chip shrink-0"
                   >
-                    <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" aria-hidden />
+                    <Star className="h-4 w-4 fill-amber-400 text-amber-400" aria-hidden />
                     <span className="max-w-[9rem] truncate">{f.label}</span>
                   </button>
                 ))}
               </div>
             )}
 
-            <div className="flex flex-wrap items-center gap-2 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
               {mode === "walk" && (
                 <button
                   onClick={() => {
@@ -326,7 +344,7 @@ export default function PlanPage() {
                     resetPlan();
                   }}
                   aria-pressed={prefs.stepFree}
-                  className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 font-medium ring-1 transition ${prefs.stepFree ? "bg-brand-600 text-white ring-brand-600" : "bg-white text-slate-700 ring-slate-200"}`}
+                  className="chip"
                 >
                   <Accessibility className="h-4 w-4" aria-hidden />
                   Step-free
@@ -338,7 +356,7 @@ export default function PlanPage() {
                   resetPlan();
                 }}
                 aria-pressed={leaveLater}
-                className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 font-medium ring-1 transition ${leaveLater ? "bg-brand-600 text-white ring-brand-600" : "bg-white text-slate-700 ring-slate-200"}`}
+                className="chip"
               >
                 <Clock className="h-4 w-4" aria-hidden />
                 Leave later
@@ -351,40 +369,52 @@ export default function PlanPage() {
                     setDepartLocal(e.target.value);
                     resetPlan();
                   }}
-                  className="min-w-0 flex-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm"
+                  className="field min-h-10 min-w-0 flex-1 rounded-full py-2 text-sm"
                   aria-label="Departure time"
                 />
               )}
             </div>
 
-            <button
-              onClick={findRoutes}
-              disabled={!from || !to || loading}
-              className="brand-gradient w-full rounded-xl py-3 font-semibold text-white shadow-md shadow-brand-500/30 transition active:scale-[0.99] disabled:opacity-50 disabled:shadow-none"
-            >
-              {loading ? (mode === "walk" ? "Checking lights, shops and streets…" : "Finding route…") : mode === "walk" ? "Find safest route" : "Plan ride"}
+            <button onClick={findRoutes} disabled={!from || !to || loading} className="btn btn-primary w-full text-base" aria-busy={loading}>
+              {loading ? (
+                <>
+                  <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden />
+                  {mode === "walk" ? "Checking lights, shops and streets…" : "Finding route…"}
+                </>
+              ) : (
+                <>
+                  {mode === "walk" ? "Find safest route" : "Plan ride"}
+                  <ArrowRight className="h-5 w-5" aria-hidden />
+                </>
+              )}
             </button>
-            {geo.error && !from && <p className="text-xs text-amber-800">{geo.error}</p>}
+            {geo.error && !from && <p className="text-sm text-caution">{geo.error}</p>}
           </div>
-
-          {badge && !plan && (
-            <p className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium ${badge.cls}`}>
-              <badge.icon className="h-4 w-4" aria-hidden />
-              {badge.text}
-            </p>
-          )}
         </div>
 
         <div className="space-y-3 px-4 pb-4">
-          {error && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-800 ring-1 ring-red-100">{error}</p>}
-          {plan?.dataNote && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900 ring-1 ring-amber-100">{plan.dataNote}</p>}
+          {error && (
+            <Callout tone="danger" icon={TriangleAlert}>
+              {error}
+            </Callout>
+          )}
+          {plan?.dataNote && (
+            <Callout tone="caution" icon={Info}>
+              {plan.dataNote}
+            </Callout>
+          )}
           {plan?.weather && <WeatherNote weather={plan.weather} later={leaveLater} />}
           {plan?.stepFree && (
-            <p className="rounded-xl bg-violet-50 p-3 text-sm text-violet-900 ring-1 ring-violet-100">
+            <Callout tone="brand" icon={Accessibility}>
               Step-free: routes with steps, unpaved or rough surfaces are ranked last. OpenStreetMap may not map every kerb or ramp.
-            </p>
+            </Callout>
           )}
 
+          {plan && plan.routes.length > 0 && (
+            <p className="eyebrow px-1 pt-1">
+              {plan.routes.length} route{plan.routes.length > 1 ? "s" : ""} · safest first
+            </p>
+          )}
           {plan?.routes.map((r) => (
             <RouteCard key={r.id} route={r} selected={r.id === selected?.id} onSelect={() => setSelectedId(r.id)} mode={plan.mode} stepFree={plan.stepFree} />
           ))}
@@ -392,14 +422,9 @@ export default function PlanPage() {
           {plan && selected && (
             <div className="card space-y-3 p-4">
               {plan.mode === "ride" && (
-                <fieldset className="space-y-2">
-                  <legend className="mb-1 text-sm font-semibold text-slate-800">Vehicle details (shared with your contacts)</legend>
-                  <select
-                    value={vehicle.type}
-                    onChange={(e) => setVehicle((v) => ({ ...v, type: e.target.value as VehicleType }))}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm"
-                    aria-label="Vehicle type"
-                  >
+                <fieldset className="space-y-2.5">
+                  <legend className="label">Vehicle details, shared with your contacts</legend>
+                  <select value={vehicle.type} onChange={(e) => setVehicle((v) => ({ ...v, type: e.target.value as VehicleType }))} className="field" aria-label="Vehicle type">
                     {VEHICLE_TYPES.map((t) => (
                       <option key={t} value={t}>
                         {VEHICLE_LABELS[t]}
@@ -410,59 +435,88 @@ export default function PlanPage() {
                     value={vehicle.plate}
                     onChange={(e) => setVehicle((v) => ({ ...v, plate: e.target.value }))}
                     placeholder="Number plate, e.g. MP09 AB 1234"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm uppercase"
+                    className="field uppercase"
                     aria-label="Number plate"
                     autoCapitalize="characters"
                   />
                   <input
                     value={vehicle.note}
                     onChange={(e) => setVehicle((v) => ({ ...v, note: e.target.value }))}
-                    placeholder="Driver name / app booking ID (optional)"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm"
+                    placeholder="Driver name or booking ID (optional)"
+                    className="field"
                     aria-label="Driver or booking details"
                     maxLength={120}
                   />
                 </fieldset>
               )}
-              <button onClick={startJourney} disabled={starting} className="w-full rounded-xl bg-green-600 py-3 font-semibold text-white shadow-md shadow-green-600/25 disabled:opacity-50">
-                {starting ? "Starting…" : me ? (plan.mode === "ride" ? "Start ride monitoring" : "Start journey & share live") : "Sign in to start a monitored journey"}
+              <button onClick={startJourney} disabled={starting} className="btn btn-good w-full text-base">
+                <Radio className="h-5 w-5" aria-hidden />
+                {starting ? "Starting…" : me ? (plan.mode === "ride" ? "Start ride monitoring" : "Start journey and share live") : "Sign in to start a monitored journey"}
               </button>
-              <p className="text-xs text-slate-500">
-                Your contacts get a live link. SafeNav checks in if you stop, leave the route or are late, and sends SOS if you don&apos;t answer.
+              <p className="text-sm text-ink-2">
+                {contacts.length
+                  ? `${contacts.length === 1 ? contacts[0].name.split(" ")[0] : `Your ${contacts.length} contacts`} can follow you live. `
+                  : "Your contacts get a live link. "}
+                SafeNav checks in if you stop, leave the route or run late, and sends SOS if you don&apos;t answer.
               </p>
             </div>
           )}
 
           {!plan && !loading && (
             <>
-              <div className="grid grid-cols-2 gap-2">
-                {TOOLS.map((t) => (
-                  <Link key={t.href} href={t.href} className="card flex flex-col gap-2 p-3 transition hover:-translate-y-0.5">
-                    <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${t.cls}`}>
-                      <t.icon className="h-5 w-5" aria-hidden />
-                    </span>
+              {!readiness.ready && readiness.next && (
+                <Link href={readiness.next.href} className="hero-gradient rise flex items-center gap-4 rounded-3xl p-4 shadow-card">
+                  <ProgressRing done={readiness.done} total={readiness.items.length} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-white/80">Finish your safety setup</span>
+                    <span className="block text-lg font-extrabold leading-snug">{readiness.next.title}</span>
+                    <span className="block text-sm text-white/85">{readiness.next.text}</span>
+                  </span>
+                  <ChevronRight className="h-6 w-6 shrink-0" aria-hidden />
+                </Link>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                {TOOLS.map((t, i) => (
+                  <Link key={t.href} href={t.href} className={`card tap rise rise-${i + 1} flex min-h-[8.5rem] flex-col gap-3 p-4`}>
+                    <IconTile icon={t.icon} tone={t.tone} />
                     <span>
-                      <span className="block text-sm font-semibold text-slate-900">{t.label}</span>
-                      <span className="block text-xs text-slate-500">{t.text}</span>
+                      <span className="block font-extrabold leading-snug text-ink">{t.label}</span>
+                      <span className="mt-0.5 block text-[13px] leading-snug text-ink-2">{t.text}</span>
                     </span>
                   </Link>
                 ))}
               </div>
-              <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
-                <p className="font-semibold text-slate-800">How routes are scored</p>
-                <p className="mt-1">
-                  Every 100 m is rated from live OpenStreetMap data: street lights, footpaths, shops open at that hour, homes facing the street, isolated
-                  land, police and hospitals nearby, the weather forecast and reports from other users.{" "}
-                  <Link href="/about" className="font-medium text-brand-700 underline">
-                    Learn more
-                  </Link>
-                </p>
-              </div>
+
+              <Link href="/about" className="card tap flex items-center gap-3 p-4">
+                <IconTile icon={Info} tone="neutral" />
+                <span className="min-w-0 flex-1">
+                  <span className="block font-bold text-ink">How routes are scored</span>
+                  <span className="block text-[13px] leading-snug text-ink-2">Street lights, footpaths, open shops, homes facing the street, police nearby, weather and reports, every 100 m.</span>
+                </span>
+                <ChevronRight className="h-5 w-5 shrink-0 text-ink-3" aria-hidden />
+              </Link>
             </>
           )}
         </div>
       </section>
     </main>
+  );
+}
+
+function AccountButton({ name }: { name?: string }) {
+  return (
+    <Link
+      href={name ? "/account" : "/login"}
+      aria-label={name ? `Your account, ${name}` : "Sign in"}
+      className="pointer-events-auto flex h-11 min-w-11 items-center justify-center rounded-full bg-surface/95 px-1.5 shadow-card ring-1 ring-line backdrop-blur"
+    >
+      {name ? (
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-soft text-sm font-extrabold text-brand-soft-ink">{initials(name)}</span>
+      ) : (
+        <span className="px-2.5 text-sm font-bold text-brand-ink">Sign in</span>
+      )}
+    </Link>
   );
 }
 
@@ -480,10 +534,10 @@ function WeatherNote({ weather, later }: { weather: NonNullable<PlanResult["weat
   }
   if (!notes.length) return null;
   return (
-    <div className="space-y-1 rounded-xl bg-sky-50 p-3 text-sm text-sky-900 ring-1 ring-sky-100">
+    <Callout tone="info" icon={CloudRain}>
       {notes.map((n) => (
         <p key={n}>{n}</p>
       ))}
-    </div>
+    </Callout>
   );
 }

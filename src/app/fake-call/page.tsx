@@ -1,9 +1,10 @@
 "use client";
 
-import { PhoneCall } from "lucide-react";
+import { Mic, Phone, PhoneOff, PhoneCall, Volume2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { PageHeader } from "@/components/Nav";
+import { Callout, Segmented } from "@/components/ui";
 import { useWakeLock } from "@/lib/client/hooks";
 import { speak, voiceSupported } from "@/lib/client/voice";
 
@@ -91,7 +92,7 @@ export default function FakeCallPage() {
       <div className="fixed inset-0 z-[120] flex flex-col items-center justify-between bg-gradient-to-b from-slate-800 to-slate-950 px-6 py-16 text-white">
         <div className="text-center">
           <p className="text-sm text-slate-300">{phase === "ringing" ? "Incoming call" : `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`}</p>
-          <div className="mx-auto mt-6 flex h-24 w-24 items-center justify-center rounded-full bg-slate-600 text-4xl font-semibold">
+          <div className="mx-auto mt-6 flex h-28 w-28 items-center justify-center rounded-full bg-slate-600 text-5xl font-semibold">
             {caller.trim().charAt(0).toUpperCase() || "?"}
           </div>
           <h1 className="mt-4 text-3xl font-semibold">{caller || "Unknown"}</h1>
@@ -99,8 +100,8 @@ export default function FakeCallPage() {
         </div>
         {phase === "ringing" ? (
           <div className="flex w-full max-w-xs justify-between">
-            <button onClick={hangUp} aria-label="Decline" className="flex h-16 w-16 items-center justify-center rounded-full bg-red-600 text-2xl">
-              ✕
+            <button onClick={hangUp} aria-label="Decline" className="flex h-[72px] w-[72px] items-center justify-center rounded-full bg-red-600">
+              <PhoneOff className="h-8 w-8" aria-hidden />
             </button>
             <button
               onClick={() => {
@@ -109,58 +110,72 @@ export default function FakeCallPage() {
                 setPhase("talking");
               }}
               aria-label="Answer"
-              className="flex h-16 w-16 animate-pulse items-center justify-center rounded-full bg-green-600 text-2xl ring-4 ring-green-400/40"
+              className="flex h-[72px] w-[72px] animate-pulse items-center justify-center rounded-full bg-green-600 ring-4 ring-green-400/40"
             >
-              ✆
+              <Phone className="h-8 w-8" aria-hidden />
             </button>
           </div>
         ) : (
-          <button onClick={hangUp} aria-label="End call" className="flex h-16 w-16 items-center justify-center rounded-full bg-red-600 text-2xl">
-            ✕
-          </button>
+          <div className="flex flex-col items-center gap-10">
+            <div className="flex gap-10 text-slate-300" aria-hidden>
+              <span className="flex flex-col items-center gap-1 text-xs">
+                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white/10">
+                  <Mic className="h-6 w-6" />
+                </span>
+                mute
+              </span>
+              <span className="flex flex-col items-center gap-1 text-xs">
+                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white/10">
+                  <Volume2 className="h-6 w-6" />
+                </span>
+                speaker
+              </span>
+            </div>
+            <button onClick={hangUp} aria-label="End call" className="flex h-[72px] w-[72px] items-center justify-center rounded-full bg-red-600">
+              <PhoneOff className="h-8 w-8" aria-hidden />
+            </button>
+          </div>
         )}
       </div>
     );
   }
 
   return (
-    <main className="mx-auto max-w-lg pb-nav">
-      <PageHeader title="Fake call" subtitle="Get a realistic incoming call to leave an uncomfortable situation." icon={<PhoneCall />} />
+    <main id="main" className="mx-auto max-w-lg pb-nav">
+      <PageHeader title="Fake call" subtitle="Get a realistic incoming call to leave an uncomfortable situation." back="/safety" />
       <div className="space-y-4 px-4">
-        <label className="block rounded-2xl bg-white p-4 text-sm font-medium text-slate-700 shadow-sm">
-          Caller name
-          <input value={caller} onChange={(e) => setCaller(e.target.value.slice(0, 30))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
-        </label>
-        <fieldset className="rounded-2xl bg-white p-4 shadow-sm">
-          <legend className="sr-only">Ring after</legend>
-          <p className="text-sm font-medium text-slate-700">Ring after</p>
-          <div className="mt-2 grid grid-cols-4 gap-2">
-            {DELAYS.map((d) => (
-              <button
-                key={d.s}
-                onClick={() => setDelay(d.s)}
-                aria-pressed={delay === d.s}
-                className={`rounded-lg py-2 text-sm font-medium ${delay === d.s ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-700"}`}
-              >
-                {d.label}
-              </button>
-            ))}
+        <section className="card space-y-4 p-4">
+          <div>
+            <label htmlFor="caller" className="label">
+              Caller name
+            </label>
+            <input id="caller" value={caller} onChange={(e) => setCaller(e.target.value.slice(0, 30))} className="field" autoComplete="off" />
           </div>
-        </fieldset>
+          <div>
+            <p className="label">Ring after</p>
+            <Segmented label="Ring after" value={delay} onChange={setDelay} options={DELAYS.map((d) => ({ value: d.s, label: d.label }))} />
+          </div>
+        </section>
         {phase === "waiting" ? (
           <div className="space-y-2">
-            <p className="rounded-xl bg-green-50 p-3 text-sm text-green-900">Call scheduled. Keep this screen open: the call can&apos;t ring if you lock the phone or switch apps.</p>
-            <button onClick={hangUp} className="w-full rounded-xl border border-slate-300 bg-white py-3 font-medium text-slate-800">
+            <Callout tone="good" icon={PhoneCall}>
+              Call scheduled. Keep this screen open: the call can&apos;t ring if you lock the phone or switch apps.
+            </Callout>
+            <button onClick={hangUp} className="btn btn-outline w-full">
               Cancel
             </button>
           </div>
         ) : (
-          <button onClick={schedule} className="w-full rounded-xl bg-brand-600 py-3 font-semibold text-white">
+          <button onClick={schedule} className="btn btn-primary w-full text-lg">
+            <PhoneCall className="h-5 w-5" aria-hidden />
             Schedule fake call
           </button>
         )}
-        <p className="text-xs text-slate-500">
-          If you feel in danger, use the SOS button or call 112 instead. <Link href="/help" className="underline">Emergency help</Link>
+        <p className="px-1 text-[13px] text-ink-3">
+          If you feel in danger, hold the SOS button or call 112 instead.{" "}
+          <Link href="/help" className="font-semibold text-brand-ink underline">
+            Emergency help
+          </Link>
         </p>
       </div>
     </main>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Capacitor, registerPlugin } from "@capacitor/core";
+import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import type { BackgroundGeolocationPlugin } from "@capacitor-community/background-geolocation";
 import type { LastFix } from "./store";
 
@@ -8,6 +8,14 @@ import type { LastFix } from "./store";
 export function isNativeApp(): boolean {
   try {
     return Capacitor.isNativePlatform();
+  } catch {
+    return false;
+  }
+}
+
+export function isAndroidApp(): boolean {
+  try {
+    return Capacitor.getPlatform() === "android";
   } catch {
     return false;
   }
@@ -53,4 +61,70 @@ export function watchBackgroundPosition(onFix: (fix: LastFix) => void, onError: 
 
 export function openAppSettings() {
   void backgroundGeolocation().openSettings().catch(() => {});
+}
+
+// ------------------------------------------------------------ SOS (Android)
+
+export type PermissionState = "granted" | "denied" | "prompt" | "prompt-with-rationale";
+
+export interface NativeStatus {
+  canSendSms: boolean;
+  sms: PermissionState;
+  notifications: PermissionState;
+  guardEnabled: boolean;
+  guardRunning: boolean;
+  autoSms: boolean;
+}
+
+export interface SmsResult {
+  to: string;
+  ok: boolean;
+  error?: string;
+}
+
+/** An SOS the Android app sent by itself (shake with screen locked, or the home-screen shortcut). */
+export interface NativeSosOutcome {
+  token: string;
+  trigger: "shake" | "shortcut";
+  at: number;
+  liveUrl?: string;
+  sms?: SmsResult[];
+  server?: "ok" | "failed";
+  serverError?: string;
+  tripId?: string;
+  reach?: { contactId: string; delivered: string[]; failed: string[] }[];
+}
+
+interface SafeNavNativePlugin {
+  getStatus(): Promise<NativeStatus>;
+  requestSmsPermission(): Promise<NativeStatus>;
+  requestNotificationPermission(): Promise<NativeStatus>;
+  sendSms(o: { numbers: string[]; message: string }): Promise<{ results: SmsResult[] }>;
+  configure(o: {
+    name?: string;
+    baseUrl?: string;
+    signedIn?: boolean;
+    contacts?: { name: string; phone: string }[];
+    countdownS?: number;
+    autoSms?: boolean;
+    tripId?: string;
+  }): Promise<NativeStatus>;
+  setShakeGuard(o: { enabled: boolean }): Promise<NativeStatus>;
+  takePendingSos(): Promise<{ sos: NativeSosOutcome | null }>;
+  addListener(event: "shake", cb: () => void): Promise<PluginListenerHandle>;
+  addListener(event: "nativeSos", cb: (o: NativeSosOutcome) => void): Promise<PluginListenerHandle>;
+}
+
+let sosPlugin: SafeNavNativePlugin | null = null;
+
+/** The SOS plugin in the Android app; null in browsers, on iOS, or in an older app build without it. */
+export function nativeSos(): SafeNavNativePlugin | null {
+  if (!isAndroidApp()) return null;
+  try {
+    if (!Capacitor.isPluginAvailable("SafeNavNative")) return null;
+  } catch {
+    return null;
+  }
+  sosPlugin ??= registerPlugin<SafeNavNativePlugin>("SafeNavNative");
+  return sosPlugin;
 }

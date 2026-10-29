@@ -1,6 +1,6 @@
 "use client";
 
-import { History, LocateFixed, MapPin, Search, Star, type LucideIcon, Building2, BusFront, Hospital, Landmark, ShoppingBag, Utensils, Route as RoadIcon, TrainFront, Shield, GraduationCap } from "lucide-react";
+import { History, LocateFixed, MapPin, Search, Star, X, type LucideIcon, Building2, BusFront, Hospital, Landmark, ShoppingBag, Utensils, Route as RoadIcon, TrainFront, Shield, GraduationCap } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { api, formatDistance } from "@/lib/client/api";
 import { store, type SavedPlace } from "@/lib/client/store";
@@ -60,7 +60,7 @@ type Option =
   | { type: "deep" }
   | { type: "map" };
 
-export function PlaceSearch({ label, placeholder, value, onChange, near, allowCurrent, currentPoint, onPickOnMap, icon: InputIcon = Search, iconClass = "text-slate-400" }: Props) {
+export function PlaceSearch({ label, placeholder, value, onChange, near, allowCurrent, currentPoint, onPickOnMap, icon: InputIcon = Search, iconClass = "text-ink-3" }: Props) {
   const [text, setText] = useState(value?.label ?? "");
   const [results, setResults] = useState<PlaceValue[]>([]);
   const [searchedDeep, setSearchedDeep] = useState<string | null>(null);
@@ -167,7 +167,7 @@ export function PlaceSearch({ label, placeholder, value, onChange, near, allowCu
       <label className="sr-only" htmlFor={`${listId}-input`}>
         {label}
       </label>
-      <InputIcon className={`pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 ${iconClass}`} aria-hidden />
+      <InputIcon className={`pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 ${iconClass}`} aria-hidden />
       <input
         id={`${listId}-input`}
         role="combobox"
@@ -176,7 +176,7 @@ export function PlaceSearch({ label, placeholder, value, onChange, near, allowCu
         aria-autocomplete="list"
         autoComplete="off"
         enterKeyHint="search"
-        className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-10 text-[15px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:bg-white focus:ring-4 focus:ring-brand-100"
+        className="min-h-12 w-full rounded-2xl bg-surface-2 py-3 pl-11 pr-11 text-base text-ink outline-none transition placeholder:text-ink-3 focus:bg-surface focus:ring-2 focus:ring-brand"
         placeholder={placeholder}
         value={text}
         onChange={(e) => {
@@ -202,7 +202,7 @@ export function PlaceSearch({ label, placeholder, value, onChange, near, allowCu
         }}
       />
       {busy ? (
-        <span className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin rounded-full border-2 border-slate-300 border-t-brand-500" aria-hidden />
+        <span className="absolute right-3.5 top-1/2 h-5 w-5 -translate-y-1/2 animate-spin rounded-full border-2 border-line-strong border-t-brand" aria-hidden />
       ) : (
         text && (
           <button
@@ -214,24 +214,24 @@ export function PlaceSearch({ label, placeholder, value, onChange, near, allowCu
               onChange(null);
               setOpen(true);
             }}
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-lg leading-none text-slate-400 hover:bg-slate-100"
+            className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full text-ink-3 hover:bg-surface-3"
           >
-            ×
+            <X className="h-[18px] w-[18px]" aria-hidden />
           </button>
         )
       )}
       {open && (options.length > 0 || error) && (
-        <ul id={listId} role="listbox" className="absolute z-30 mt-2 max-h-[min(24rem,60dvh)] w-full overflow-auto rounded-2xl border border-slate-200 bg-white py-1.5 shadow-xl shadow-slate-900/10">
-          {error && <li className="px-4 py-2 text-sm text-red-700">{error}</li>}
-          {degraded && !error && <li className="px-4 py-2 text-xs text-amber-800">Quick search is busy. Press Enter or “Search all places”.</li>}
-          {noResults && !degraded && <li className="px-4 py-2 text-sm text-slate-500">No quick matches. Try a full search, a nearby landmark, or pick it on the map.</li>}
+        <ul id={listId} role="listbox" className="absolute z-30 mt-2 max-h-[min(24rem,60dvh)] w-full overflow-auto rounded-2xl bg-surface py-1.5 shadow-float ring-1 ring-line">
+          {error && <li className="px-4 py-2 text-sm font-medium text-danger">{error}</li>}
+          {degraded && !error && <li className="px-4 py-2 text-sm text-caution">Quick search is busy. Press Enter or “Search all places”.</li>}
+          {noResults && !degraded && <li className="px-4 py-2 text-sm text-ink-2">No quick matches. Try a full search, a nearby landmark, or pick it on the map.</li>}
           {typing && results.some((r) => r.source === "ola") && (
-            <li className="px-4 pb-1 pt-0.5 text-[10px] text-slate-400" aria-hidden>
+            <li className="px-4 pb-1 pt-0.5 text-xs text-ink-3" aria-hidden>
               Includes results from Ola Maps
             </li>
           )}
           {options.map((o, i) => {
-            const activeCls = i === active ? "bg-brand-50" : "hover:bg-slate-50";
+            const activeCls = i === active ? "bg-brand-soft" : "hover:bg-surface-2";
             if (o.type === "deep" || o.type === "map") {
               const Icon = o.type === "deep" ? Search : MapPin;
               return (
@@ -243,9 +243,9 @@ export function PlaceSearch({ label, placeholder, value, onChange, near, allowCu
                     e.preventDefault();
                     choose(o);
                   }}
-                  className={`flex cursor-pointer items-center gap-3 border-t border-slate-100 px-4 py-2.5 text-sm font-medium text-brand-700 ${activeCls}`}
+                  className={`flex min-h-12 cursor-pointer items-center gap-3 border-t border-line px-4 py-3 text-sm font-bold text-brand-ink ${activeCls}`}
                 >
-                  <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                  <Icon className="h-5 w-5 shrink-0" aria-hidden />
                   {o.type === "deep" ? <span className="truncate">Search all places for “{q}”</span> : "Choose on map"}
                 </li>
               );
@@ -254,24 +254,24 @@ export function PlaceSearch({ label, placeholder, value, onChange, near, allowCu
             const Icon = p.current ? LocateFixed : o.section === "Recent" || (!typing && !o.saved) ? History : o.saved ? Star : kindIcon(p.kind);
             return (
               <li key={`${p.label}-${p.point.join(",")}-${i}`} role="option" aria-selected={i === active}>
-                {o.section && <p className="px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{o.section}</p>}
+                {o.section && <p className="eyebrow px-4 pb-1 pt-2">{o.section}</p>}
                 <div
                   onMouseDown={(e) => {
                     e.preventDefault();
                     pick(p);
                   }}
-                  className={`flex cursor-pointer items-center gap-3 px-4 py-2 ${activeCls}`}
+                  className={`flex min-h-14 cursor-pointer items-center gap-3 px-4 py-2 ${activeCls}`}
                 >
-                  <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${p.current ? "bg-brand-100 text-brand-700" : "bg-slate-100 text-slate-600"}`}>
+                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${p.current ? "bg-brand-soft text-brand-soft-ink" : "bg-surface-2 text-ink-2"}`}>
                     <Icon className="h-4 w-4" aria-hidden />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className={`truncate text-sm font-medium ${p.current ? "text-brand-700" : "text-slate-900"}`}>{p.label}</div>
+                    <div className={`truncate text-[15px] font-semibold ${p.current ? "text-brand-ink" : "text-ink"}`}>{p.label}</div>
                     {(p.detail || p.kind) && (
-                      <div className="truncate text-xs text-slate-500">{[p.kind, p.detail].filter(Boolean).join(" · ")}</div>
+                      <div className="truncate text-[13px] text-ink-2">{[p.kind, p.detail].filter(Boolean).join(" · ")}</div>
                     )}
                   </div>
-                  {p.distance != null && <span className="shrink-0 text-xs tabular-nums text-slate-400">{formatDistance(p.distance)}</span>}
+                  {p.distance != null && <span className="shrink-0 text-xs font-medium tabular-nums text-ink-3">{formatDistance(p.distance)}</span>}
                   {!p.current && (
                     <button
                       type="button"
@@ -282,9 +282,9 @@ export function PlaceSearch({ label, placeholder, value, onChange, near, allowCu
                         e.stopPropagation();
                         store.toggleFavorite({ label: p.label, detail: p.detail, point: p.point });
                       }}
-                      className="shrink-0 rounded-full p-1.5 text-slate-300 hover:bg-amber-50 hover:text-amber-500"
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ink-3 hover:bg-caution-soft hover:text-amber-500"
                     >
-                      <Star className={`h-4 w-4 ${o.saved ? "fill-amber-400 text-amber-400" : ""}`} aria-hidden />
+                      <Star className={`h-[18px] w-[18px] ${o.saved ? "fill-amber-400 text-amber-400" : ""}`} aria-hidden />
                     </button>
                   )}
                 </div>

@@ -1,21 +1,23 @@
 "use client";
 
-import { UserRound } from "lucide-react";
+import { Info, LogOut, Settings, ShieldAlert, Users } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { DeviceSettings } from "@/components/DeviceSettings";
 import { PageHeader } from "@/components/Nav";
+import { initials } from "@/components/Sos";
+import { Callout, EmptyState, ListRow, Toggle } from "@/components/ui";
 import { api } from "@/lib/client/api";
 import { useSession } from "@/lib/client/hooks";
 import { store } from "@/lib/client/store";
 
 export default function AccountPage() {
   const router = useRouter();
-  const { me, loading, refresh } = useSession();
+  const { me, loading, refresh, contacts } = useSession();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [msg, setMsg] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (me) {
@@ -24,25 +26,38 @@ export default function AccountPage() {
     }
   }, [me]);
 
-  if (loading) return <main className="p-6 text-slate-600">Loading…</main>;
+  if (loading) return <main id="main" className="flex min-h-dvh items-center justify-center text-ink-2">Loading…</main>;
   if (!me) {
     return (
-      <main className="p-6">
-        <Link href="/login?next=/account" className="text-brand-600 underline">
-          Sign in
-        </Link>
+      <main id="main" className="mx-auto max-w-lg pb-nav">
+        <PageHeader title="Account" back="/safety" />
+        <div className="card mx-4">
+          <EmptyState
+            icon={Users}
+            title="You're not signed in"
+            text="Sign in to share journeys live and alert your contacts automatically."
+            action={
+              <Link href="/login?next=/account" className="btn btn-primary w-full">
+                Sign in
+              </Link>
+            }
+          />
+        </div>
       </main>
     );
   }
 
   const save = async (patch: Record<string, unknown>) => {
     setMsg(null);
+    setSaving(true);
     try {
       await api("/api/auth/me", { method: "PATCH", json: patch });
       await refresh();
-      setMsg("Saved");
+      setMsg({ ok: true, text: "Saved" });
     } catch (err) {
-      setMsg((err as Error).message);
+      setMsg({ ok: false, text: (err as Error).message });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -55,48 +70,66 @@ export default function AccountPage() {
   };
 
   return (
-    <main className="mx-auto max-w-lg pb-nav">
-      <PageHeader title="Account" subtitle={me.email} icon={<UserRound />} />
-      <div className="space-y-4 px-4">
+    <main id="main" className="mx-auto max-w-lg pb-nav">
+      <PageHeader title="Account" back="/safety" />
+      <div className="space-y-5 px-4">
+        <div className="flex items-center gap-4 px-1">
+          <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-brand-soft text-xl font-extrabold text-brand-soft-ink" aria-hidden>
+            {initials(me.name)}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-xl font-extrabold text-ink">{me.name}</p>
+            <p className="truncate text-sm text-ink-2">{me.email}</p>
+          </div>
+        </div>
+
         <form
           onSubmit={(e) => {
             e.preventDefault();
             void save({ name, phone: phone.trim() || null });
           }}
-          className="space-y-2 rounded-2xl bg-white p-4 shadow-sm"
+          className="card space-y-4 p-4"
         >
-          <label className="block text-sm font-medium text-slate-700">
-            Name
-            <input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" value={name} onChange={(e) => setName(e.target.value)} />
-          </label>
-          <label className="block text-sm font-medium text-slate-700">
-            Mobile number (shown to your contacts on the live link)
-            <input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
-          </label>
-          <button className="rounded-xl bg-brand-600 px-4 py-2 font-semibold text-white">Save</button>
+          <div>
+            <label htmlFor="acc-name" className="label">
+              Name
+            </label>
+            <input id="acc-name" className="field" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+          </div>
+          <div>
+            <label htmlFor="acc-phone" className="label">
+              Mobile number
+            </label>
+            <input id="acc-phone" className="field" type="tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" aria-describedby="acc-phone-hint" />
+            <p id="acc-phone-hint" className="mt-1 text-[13px] text-ink-3">
+              Shown to your contacts on your live link, so they can call you.
+            </p>
+          </div>
+          <button disabled={saving} className="btn btn-primary w-full">
+            {saving ? "Saving…" : "Save changes"}
+          </button>
+          {msg && <Callout tone={msg.ok ? "good" : "danger"}>{msg.text}</Callout>}
         </form>
 
-        <label className="flex items-start gap-3 rounded-2xl bg-white p-4 shadow-sm">
-          <input type="checkbox" className="mt-1 h-5 w-5" checked={me.autoSos} onChange={(e) => save({ autoSos: e.target.checked })} />
-          <span className="text-sm text-slate-700">
-            <span className="block font-medium text-slate-900">Automatic SOS</span>
-            If you don&apos;t answer a safety check-in within 60 seconds during a journey, SafeNav raises an SOS for you.
-          </span>
-        </label>
-
-        {msg && <p className="text-sm text-slate-600">{msg}</p>}
-
-        <DeviceSettings />
-
-        <div className="flex gap-3 text-sm">
-          <Link href="/contacts" className="text-brand-600 underline">
-            Trusted contacts
-          </Link>
-          <Link href="/about" className="text-brand-600 underline">
-            How SafeNav works
-          </Link>
+        <div className="card overflow-hidden">
+          <Toggle
+            icon={ShieldAlert}
+            tone="sos"
+            label="Automatic SOS"
+            description="During a journey or safety timer, if you don't answer a check-in within 60 seconds, SafeNav raises the SOS for you."
+            checked={me.autoSos}
+            onChange={(v) => void save({ autoSos: v })}
+          />
         </div>
-        <button onClick={logout} className="w-full rounded-xl border border-slate-300 bg-white py-2.5 font-medium text-slate-800">
+
+        <div className="card divide-y divide-line overflow-hidden">
+          <ListRow href="/contacts" icon={Users} title="Trusted contacts" text={`${contacts.length} of 5 added`} />
+          <ListRow href="/safety#settings" icon={Settings} tone="neutral" title="Settings on this phone" text="Shake to SOS, automatic SMS, theme" />
+          <ListRow href="/about" icon={Info} tone="neutral" title="How SafeNav works" text="Scores, data sources and limits" />
+        </div>
+
+        <button onClick={logout} className="btn btn-outline w-full">
+          <LogOut className="h-5 w-5" aria-hidden />
           Sign out
         </button>
       </div>

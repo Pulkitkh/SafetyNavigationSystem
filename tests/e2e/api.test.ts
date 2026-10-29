@@ -170,6 +170,46 @@ run("API end to end", () => {
     expect(active.body.trip.status).toBe("sos");
   });
 
+  it("alerts linked contacts automatically and shows who opened the alert", async () => {
+    const added = await ravi.call("/api/contacts", { method: "POST", json: { name: "Meera Kumar", phone: "98111 22233", relation: "Sister" } });
+    expect(added.status).toBe(201);
+    const id = added.body.contact.id;
+    const inv = await ravi.call(`/api/contacts/${id}/invite`, { method: "POST" });
+    expect(inv.status).toBe(200);
+    const inviteToken = inv.body.url.split("/g/")[1];
+    expect(inv.body.message).toContain(inv.body.url);
+
+    // The contact opens the invite: no account needed.
+    const guardian = new Client();
+    const info = await guardian.call(`/api/guardian/${inviteToken}`);
+    expect(info.body).toMatchObject({ userName: "Ravi Kumar", contactName: "Meera Kumar", linked: { push: 0 } });
+    const keys = { p256dh: "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM", auth: "tBHItJI5svbpez7KI4CCXg" };
+    const ssrf = await guardian.call(`/api/guardian/${inviteToken}/subscribe`, { method: "POST", json: { subscription: { endpoint: "https://169.254.169.254/x", keys } } });
+    expect(ssrf.status).toBe(400);
+    const sub = await guardian.call(`/api/guardian/${inviteToken}/subscribe`, { method: "POST", json: { subscription: { endpoint: `https://fcm.googleapis.com/fcm/send/e2e-${unique}`, keys } } });
+    expect(sub.status).toBe(201);
+    const list = await ravi.call("/api/contacts");
+    expect(list.body.contacts.find((c: { id: string }) => c.id === id).alerts).toEqual({ push: 1, telegram: 0 });
+
+    // SOS fans out on its own; this endpoint isn't a real subscription, so the push service refuses it.
+    const t = token();
+    const sos = await ravi.call("/api/sos", { method: "POST", json: { shareToken: t, lat: 22.71, lng: 75.85 } });
+    expect(sos.status).toBe(200);
+    const reach = sos.body.reach.find((r: { contactId: string }) => r.contactId === id);
+    expect([...reach.delivered, ...reach.failed]).toContain("push");
+
+    // Opening the alert link marks it seen for the person in danger.
+    await guardian.call(`/api/share/${t}/seen`, { method: "POST", json: { g: sub.body.deviceId } });
+    const status = await ravi.call(`/api/sos/${sos.body.tripId}`);
+    expect(status.body.contacts.find((c: { contactId: string }) => c.contactId === id).seenAt).toBeTruthy();
+    expect((await asha.call(`/api/sos/${sos.body.tripId}`)).status).toBe(404);
+
+    // Stopping alerts voids the link.
+    expect((await ravi.call(`/api/contacts/${id}/invite`, { method: "DELETE" })).status).toBe(200);
+    expect((await guardian.call(`/api/guardian/${inviteToken}`)).status).toBe(404);
+    await ravi.call(`/api/trips/${sos.body.tripId}`, { method: "PATCH", json: { status: "ended", reason: "Marked safe" } });
+  }, NETWORK_TIMEOUT);
+
   it("reports upstream outages with a clear message instead of crashing", async () => {
     const plan = await asha.call("/api/routes/plan", { method: "POST", json: { from: route[0], to: route[2], mode: "walk" } });
     expect([200, 502]).toContain(plan.status);

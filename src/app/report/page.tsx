@@ -1,8 +1,11 @@
 "use client";
 
+import { Beer, CircleAlert, CloudFog, Construction, Dog, Footprints, Lightbulb, ShieldCheck, ShoppingBag, Sparkles, ThumbsDown, ThumbsUp, TriangleAlert, Users, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Map, { type MapMarker } from "@/components/Map";
+import { PageHeader } from "@/components/Nav";
+import { Callout } from "@/components/ui";
 import { api, formatAgo } from "@/lib/client/api";
 import { useGeolocation, useSession } from "@/lib/client/hooks";
 import { haversine, type LngLat } from "@/lib/geo";
@@ -18,6 +21,22 @@ interface Report {
   upvotes: number;
   flags: number;
 }
+
+/** One icon family everywhere; the category data's emoji are not shown. */
+const CATEGORY_ICON: Record<string, LucideIcon> = {
+  harassment: TriangleAlert,
+  stalking: Footprints,
+  snatching: ShoppingBag,
+  unsafe_crowd: Beer,
+  deserted: CloudFog,
+  poor_lighting: Lightbulb,
+  stray_dogs: Dog,
+  bad_footpath: Construction,
+  other: CircleAlert,
+  well_lit: Sparkles,
+  busy_safe: Users,
+  police_presence: ShieldCheck,
+};
 
 const RADIUS_DEG = 0.012; // ~1.3 km around the selected point
 
@@ -91,94 +110,121 @@ export default function ReportPage() {
 
   const nearby = point ? [...reports].sort((a, b) => haversine(point, [a.lng, a.lat]) - haversine(point, [b.lng, b.lat])) : reports;
 
+  const concerns = REPORT_CATEGORIES.filter((c) => c.severity > 0);
+  const positives = REPORT_CATEGORIES.filter((c) => c.severity < 0);
+  const categoryButton = (c: (typeof REPORT_CATEGORIES)[number]) => {
+    const Icon = CATEGORY_ICON[c.id] ?? CircleAlert;
+    const on = category === c.id;
+    return (
+      <button
+        key={c.id}
+        type="button"
+        role="radio"
+        aria-checked={on}
+        onClick={() => setCategory(c.id)}
+        className={`flex min-h-14 items-center gap-2.5 rounded-2xl px-3 py-2 text-left text-sm font-semibold leading-snug transition-colors ${
+          on ? "bg-brand-soft text-brand-soft-ink ring-2 ring-brand" : "bg-surface text-ink ring-1 ring-line hover:bg-surface-2"
+        }`}
+      >
+        <Icon className={`h-5 w-5 shrink-0 ${on ? "" : c.severity < 0 ? "text-good" : "text-danger"}`} aria-hidden />
+        {c.label}
+      </button>
+    );
+  };
+
   return (
-    <main className="flex h-dvh flex-col md:flex-row">
-      <section className="relative h-[38dvh] md:order-2 md:h-auto md:flex-1">
+    <main id="main" className="flex h-dvh flex-col md:flex-row">
+      <section className="relative h-[34dvh] md:order-2 md:h-auto md:flex-1" aria-label="Map">
         <Map markers={markers} onMapClick={setPoint} fitKey={point ? "p" : "none"} user={geo.fix ? { point: [geo.fix.lng, geo.fix.lat], accuracy: geo.fix.accuracy } : null} />
-        <p className="pointer-events-none absolute left-3 top-[max(0.75rem,env(safe-area-inset-top))] rounded-full bg-white/90 px-3 py-1 text-xs text-slate-700 shadow">
+        <p className="pointer-events-none absolute left-3 top-[max(0.75rem,env(safe-area-inset-top))] rounded-full bg-surface/95 px-3 py-1.5 text-[13px] font-bold text-ink shadow-card">
           Tap the map to set the exact spot
         </p>
       </section>
 
-      <section className="flex-1 space-y-4 overflow-y-auto bg-slate-50 p-4 pb-nav md:order-1 md:w-[420px] md:flex-none">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900">Report a safety concern</h1>
-          <p className="text-sm text-slate-600">Reports are anonymous to other users and fade over time unless others confirm them.</p>
-        </div>
+      <section className="sheet relative z-10 -mt-6 flex-1 overflow-y-auto bg-canvas pb-nav md:order-1 md:mt-0 md:w-[440px] md:flex-none">
+        <PageHeader title="Report a safety concern" subtitle="Anonymous to other users. Reports fade over time unless others confirm them." back="/safety" />
+        <div className="space-y-5 px-4">
+          <fieldset>
+            <legend className="label">What&apos;s the concern?</legend>
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Concern">
+              {concerns.map(categoryButton)}
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend className="label">Or something good about this place</legend>
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Positive">
+              {positives.map(categoryButton)}
+            </div>
+          </fieldset>
 
-        <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="What happened">
-          {REPORT_CATEGORIES.map((c) => (
-            <button
-              key={c.id}
-              role="radio"
-              aria-checked={category === c.id}
-              onClick={() => setCategory(c.id)}
-              className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm ${
-                category === c.id ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-700"
-              } ${c.severity < 0 ? "border-dashed" : ""}`}
-            >
-              <span aria-hidden>{c.emoji}</span>
-              {c.label}
+          <div>
+            <label htmlFor="r-note" className="label">
+              Details <span className="font-normal text-ink-3">(optional)</span>
+            </label>
+            <textarea
+              id="r-note"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              maxLength={280}
+              rows={2}
+              placeholder="What happened? Don't include names or personal details."
+              className="field"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" aria-pressed={earlier} onClick={() => setEarlier((v) => !v)} className="chip">
+              It happened earlier
             </button>
-          ))}
-        </div>
+            {earlier && <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className="field min-h-10 min-w-0 flex-1 rounded-full py-2 text-sm" aria-label="When it happened" />}
+          </div>
 
-        <textarea
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          maxLength={280}
-          rows={2}
-          placeholder="Details (optional). Don't include names or personal information."
-          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-          aria-label="Details"
-        />
+          {me ? (
+            <button onClick={submit} disabled={!point || !category || busy} className="btn btn-primary w-full">
+              {busy ? "Submitting…" : "Submit report"}
+            </button>
+          ) : (
+            <Link href="/login?next=/report" className="btn btn-primary w-full">
+              Sign in to report
+            </Link>
+          )}
+          {status && <Callout tone={status.kind === "ok" ? "good" : "danger"}>{status.text}</Callout>}
 
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <label className="flex items-center gap-1.5">
-            <input type="checkbox" checked={earlier} onChange={(e) => setEarlier(e.target.checked)} /> It happened earlier
-          </label>
-          {earlier && <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-2 py-1" aria-label="When it happened" />}
-        </div>
-
-        {me ? (
-          <button onClick={submit} disabled={!point || !category || busy} className="w-full rounded-xl bg-brand-600 py-2.5 font-semibold text-white disabled:opacity-50">
-            {busy ? "Submitting…" : "Submit report"}
-          </button>
-        ) : (
-          <Link href="/login?next=/report" className="block rounded-xl bg-brand-600 py-2.5 text-center font-semibold text-white">
-            Sign in to report
-          </Link>
-        )}
-        {status && <p className={`rounded-xl p-3 text-sm ${status.kind === "ok" ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>{status.text}</p>}
-
-        <div>
-          <h2 className="mb-2 font-semibold text-slate-900">Reports nearby</h2>
-          {nearby.length === 0 && <p className="text-sm text-slate-500">No reports within about a kilometre.</p>}
-          <ul className="space-y-2">
-            {nearby.slice(0, 20).map((r) => {
-              const cat = reportCategory(r.category);
-              return (
-                <li key={r.id} className="rounded-xl bg-white p-3 text-sm shadow-sm">
-                  <div className="flex justify-between gap-2">
-                    <span className="font-medium text-slate-900">
-                      {cat?.emoji} {cat?.label ?? r.category}
-                    </span>
-                    <span className="shrink-0 text-xs text-slate-500">{formatAgo(r.observedAt)}</span>
-                  </div>
-                  {r.note && <p className="mt-1 text-slate-600">{r.note}</p>}
-                  <div className="mt-2 flex items-center gap-3 text-xs text-slate-600">
-                    {point && <span>{Math.round(haversine(point, [r.lng, r.lat]))} m away</span>}
-                    <button onClick={() => vote(r.id, 1)} disabled={!me} className="text-green-700 disabled:opacity-40">
-                      ✓ Confirm ({r.upvotes})
-                    </button>
-                    <button onClick={() => vote(r.id, -1)} disabled={!me} className="text-slate-500 disabled:opacity-40">
-                      Not accurate
-                    </button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+          <section aria-labelledby="nearby-title">
+            <h2 id="nearby-title" className="mb-2 px-1 text-base font-extrabold text-ink">
+              Reports nearby
+            </h2>
+            {nearby.length === 0 && <p className="px-1 text-sm text-ink-2">No reports within about a kilometre.</p>}
+            <ul className="space-y-2">
+              {nearby.slice(0, 20).map((r) => {
+                const cat = reportCategory(r.category);
+                const Icon = CATEGORY_ICON[r.category] ?? CircleAlert;
+                return (
+                  <li key={r.id} className="card p-3.5 text-sm">
+                    <div className="flex justify-between gap-2">
+                      <span className="flex items-center gap-2 font-bold text-ink">
+                        <Icon className={`h-4 w-4 shrink-0 ${cat && cat.severity < 0 ? "text-good" : "text-danger"}`} aria-hidden />
+                        {cat?.label ?? r.category}
+                      </span>
+                      <span className="shrink-0 text-xs text-ink-3">{formatAgo(r.observedAt)}</span>
+                    </div>
+                    {r.note && <p className="mt-1 text-ink-2">{r.note}</p>}
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[13px] text-ink-2">
+                      {point && <span>{Math.round(haversine(point, [r.lng, r.lat]))} m away</span>}
+                      <button onClick={() => vote(r.id, 1)} disabled={!me} className="chip min-h-9 py-1 text-[13px] disabled:opacity-40">
+                        <ThumbsUp className="h-3.5 w-3.5" aria-hidden />
+                        Confirm ({r.upvotes})
+                      </button>
+                      <button onClick={() => vote(r.id, -1)} disabled={!me} className="chip min-h-9 py-1 text-[13px] disabled:opacity-40">
+                        <ThumbsDown className="h-3.5 w-3.5" aria-hidden />
+                        Not accurate
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
         </div>
       </section>
     </main>

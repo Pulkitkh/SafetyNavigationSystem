@@ -1,11 +1,11 @@
 "use client";
 
-import { Hospital, Fuel, Pill, MapPin, Navigation, RefreshCw, ScanSearch, Share2, Shield, Timer, TriangleAlert, CircleCheck, Store } from "lucide-react";
+import { Hospital, Fuel, Pill, MapPin, Navigation, RefreshCw, Share2, Shield, Timer, TriangleAlert, CircleCheck, Store } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Map, { type MapMarker } from "@/components/Map";
 import { PageHeader } from "@/components/Nav";
-import { ScoreBadge } from "@/components/RouteCard";
+import { Badge, Callout, IconTile, ScoreRing, SectionTitle } from "@/components/ui";
 import { api, formatDistance } from "@/lib/client/api";
 import { useGeolocation } from "@/lib/client/hooks";
 import type { LngLat } from "@/lib/geo";
@@ -14,9 +14,9 @@ import { FACTOR_LABELS, FACTORS, scoreColor } from "@/lib/safety/factors";
 import { mapsLink } from "@/lib/sos";
 
 const BAND = {
-  good: { text: "Looks reasonably safe right now", cls: "text-green-700" },
-  caution: { text: "Be careful here right now", cls: "text-amber-700" },
-  avoid: { text: "This spot looks unsafe right now", cls: "text-red-700" },
+  good: { text: "Looks reasonably safe right now", cls: "text-good", tone: "good" },
+  caution: { text: "Be careful here right now", cls: "text-caution", tone: "caution" },
+  avoid: { text: "This spot looks unsafe right now", cls: "text-danger", tone: "danger" },
 } as const;
 
 const PERIOD = { day: "Daylight", twilight: "Dusk / dawn", night: "After dark", late_night: "Late night" } as const;
@@ -32,22 +32,17 @@ function placeIcon(kind: string) {
 function PlaceRow({ p, tag }: { p: NearbyPlace; tag?: string }) {
   const Icon = placeIcon(p.kind);
   return (
-    <li className="flex items-center gap-3 py-2.5">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
-        <Icon className="h-4 w-4" aria-hidden />
-      </span>
+    <li className="flex items-center gap-3 px-4 py-3">
+      <IconTile icon={Icon} tone={p.kind === "police" ? "info" : p.kind === "hospital" || p.kind === "clinic" ? "danger" : "neutral"} size="sm" />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-slate-900">{p.name}</p>
-        <p className="text-xs text-slate-500">
+        <p className="break-words font-bold leading-snug text-ink">{p.name}</p>
+        <p className="text-[13px] text-ink-2">
           {tag ? `${tag} · ` : ""}
           {formatDistance(p.distance)} away{p.openNow ? " · open now" : ""}
         </p>
       </div>
-      <Link
-        href={`/?to=${p.point[0]},${p.point[1]}&label=${encodeURIComponent(p.name)}`}
-        className="flex shrink-0 items-center gap-1 rounded-full bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white"
-      >
-        <Navigation className="h-3.5 w-3.5" aria-hidden />
+      <Link href={`/?to=${p.point[0]},${p.point[1]}&label=${encodeURIComponent(p.name)}`} aria-label={`Safest route to ${p.name}`} className="btn btn-secondary btn-sm shrink-0">
+        <Navigation className="h-4 w-4" aria-hidden />
         Go
       </Link>
     </li>
@@ -107,8 +102,8 @@ export default function AreaPage() {
   };
 
   return (
-    <main className="mx-auto max-w-2xl pb-nav">
-      <PageHeader title="Is it safe here?" subtitle="A live check of the streets around you, from real map data and the time right now." icon={<ScanSearch />} />
+    <main id="main" className="mx-auto max-w-2xl pb-nav">
+      <PageHeader title="Is it safe here?" subtitle="A live check of the streets around you, from real map data and the time right now." back="/safety" />
       <div className="space-y-4 px-4">
         <div className="card relative h-56 overflow-hidden p-0">
           <Map
@@ -120,87 +115,99 @@ export default function AreaPage() {
             }}
             fitKey={`${point?.join(",") ?? ""}-${area ? "a" : ""}`}
           />
-          <p className="pointer-events-none absolute inset-x-2 bottom-2 rounded-lg bg-white/90 px-2 py-1 text-center text-[11px] text-slate-600 shadow">
-            Tap the map to check another spot
-          </p>
+          <p className="pointer-events-none absolute left-2 top-2 rounded-full bg-surface/95 px-3 py-1.5 text-[13px] font-bold text-ink shadow-card">Tap the map to check another spot</p>
         </div>
 
-        {geo.error && !point && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">{geo.error}</p>}
+        {geo.error && !point && <Callout tone="caution">{geo.error}</Callout>}
         {error && !area && (
           <div className="card space-y-3 p-4 text-sm">
-            <p className="text-red-800">{error}</p>
-            <p className="text-slate-600">You can still set a safety timer, share your location or see nearby help and helplines.</p>
+            <Callout tone="danger">{error}</Callout>
+            <p className="text-ink-2">You can still set a safety timer, share your location or see nearby help and helplines.</p>
             <div className="flex flex-wrap gap-2">
-              <button onClick={() => point && check(point)} className="rounded-full bg-brand-600 px-3 py-1.5 font-semibold text-white">
+              <button onClick={() => point && check(point)} className="btn btn-primary btn-sm">
+                <RefreshCw className="h-4 w-4" aria-hidden />
                 Try again
               </button>
-              <Link href="/timer" className="rounded-full bg-sky-50 px-3 py-1.5 font-semibold text-sky-800">
+              <Link href="/timer" className="chip">
+                <Timer className="h-4 w-4" aria-hidden />
                 Safety timer
               </Link>
-              <Link href="/help" className="rounded-full bg-amber-50 px-3 py-1.5 font-semibold text-amber-900">
+              <Link href="/help" className="chip">
                 Nearby help
               </Link>
-              <button onClick={share} className="rounded-full bg-slate-100 px-3 py-1.5 font-semibold text-slate-800">
+              <button onClick={share} className="chip">
+                <Share2 className="h-4 w-4" aria-hidden />
                 Share location
               </button>
             </div>
           </div>
         )}
-        {error && area && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p>}
+        {error && area && <Callout tone="danger">{error}</Callout>}
         {loading && !area && (
-          <div className="card flex items-center gap-3 p-4 text-sm text-slate-600">
-            <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-brand-500" aria-hidden />
-            Checking lights, open places, police and reports around you…
+          <div className="card flex items-center gap-4 p-4" aria-busy="true">
+            <div className="h-[72px] w-[72px] shrink-0 animate-pulse rounded-full bg-surface-3" />
+            <div className="flex-1 space-y-2">
+              <div className="h-4 w-3/4 animate-pulse rounded bg-surface-3" />
+              <p className="text-sm text-ink-2">Checking lights, open places, police and reports around you…</p>
+            </div>
           </div>
         )}
 
         {area && (
           <>
-            <section className="card p-4">
+            <section className="card rise p-4" aria-labelledby="verdict">
               <div className="flex items-center gap-4">
-                <ScoreBadge score={area.score} size={72} />
+                <ScoreRing score={area.score} size={76} />
                 <div className="min-w-0 flex-1">
-                  <p className={`text-base font-bold ${BAND[area.band].cls}`}>{BAND[area.band].text}</p>
-                  <p className="text-xs text-slate-500">
-                    {PERIOD[area.period]} · checked {checkedAt?.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })} · map data {area.confidence}
-                    {custom ? " · chosen spot" : ""}
+                  <p id="verdict" className={`text-lg font-extrabold leading-snug ${BAND[area.band].cls}`}>
+                    {BAND[area.band].text}
                   </p>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    <Badge tone="neutral">{PERIOD[area.period]}</Badge>
+                    <Badge tone="neutral">{checkedAt?.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}</Badge>
+                    <Badge tone={area.confidence === "low" ? "caution" : "neutral"}>Map data {area.confidence}</Badge>
+                    {custom && <Badge tone="brand">Chosen spot</Badge>}
+                  </div>
                 </div>
                 <button
                   onClick={() => point && check(point)}
                   disabled={loading}
                   aria-label="Check again"
-                  className="rounded-full p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+                  className="tap flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink-2 disabled:opacity-50"
                 >
                   <RefreshCw className={`h-5 w-5 ${loading ? "animate-spin" : ""}`} />
                 </button>
               </div>
-              {area.dataNote && <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">{area.dataNote}</p>}
+              {area.dataNote && (
+                <div className="mt-3">
+                  <Callout tone="caution">{area.dataNote}</Callout>
+                </div>
+              )}
               {(area.reasons.length > 0 || area.highlights.length > 0) && (
-                <ul className="mt-3 space-y-1.5 text-sm">
+                <ul className="mt-3 space-y-2 text-[15px]">
                   {area.reasons.map((r) => (
-                    <li key={r} className="flex gap-2 text-red-800">
-                      <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                    <li key={r} className="flex gap-2 text-ink">
+                      <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-danger" aria-hidden />
                       {r}
                     </li>
                   ))}
                   {area.highlights.map((h) => (
-                    <li key={h} className="flex gap-2 text-green-800">
-                      <CircleCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                    <li key={h} className="flex gap-2 text-ink">
+                      <CircleCheck className="mt-0.5 h-5 w-5 shrink-0 text-good" aria-hidden />
                       {h}
                     </li>
                   ))}
                 </ul>
               )}
-              <ul className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2">
+              <ul className="mt-4 space-y-2.5">
                 {FACTORS.filter((f) => area.weights[f] > 0).map((f) => (
                   <li key={f}>
-                    <div className="flex justify-between text-[11px] text-slate-600">
-                      <span className="truncate">{FACTOR_LABELS[f]}</span>
-                      <span className="font-semibold text-slate-800">{area.factors[f]}</span>
+                    <div className="flex justify-between gap-3 text-[13px] text-ink-2">
+                      <span>{FACTOR_LABELS[f]}</span>
+                      <span className="font-bold text-ink">{area.factors[f]}</span>
                     </div>
-                    <div className="mt-0.5 h-1.5 rounded-full bg-slate-100">
-                      <div className="h-1.5 rounded-full" style={{ width: `${area.factors[f]}%`, background: scoreColor(area.factors[f]) }} />
+                    <div className="mt-1 h-2 rounded-full bg-surface-3">
+                      <div className="h-2 rounded-full" style={{ width: `${area.factors[f]}%`, background: scoreColor(area.factors[f]) }} />
                     </div>
                   </li>
                 ))}
@@ -208,9 +215,9 @@ export default function AreaPage() {
             </section>
 
             {(area.nearestHaven || area.nearestPolice) && (
-              <section className="card px-4 py-2">
-                <h2 className="pt-2 text-sm font-semibold text-slate-900">Where to go for help</h2>
-                <ul className="divide-y divide-slate-100">
+              <section aria-labelledby="help-title">
+                <SectionTitle id="help-title">Where to go for help</SectionTitle>
+                <ul className="card divide-y divide-line overflow-hidden">
                   {area.nearestHaven && <PlaceRow p={area.nearestHaven} tag="Open safe spot" />}
                   {area.nearestPolice && <PlaceRow p={area.nearestPolice} tag="Nearest police" />}
                 </ul>
@@ -218,9 +225,9 @@ export default function AreaPage() {
             )}
 
             {area.openNearby.length > 0 && (
-              <section className="card px-4 py-2">
-                <h2 className="pt-2 text-sm font-semibold text-slate-900">Open near you now</h2>
-                <ul className="divide-y divide-slate-100">
+              <section aria-labelledby="open-title">
+                <SectionTitle id="open-title">Open near you now</SectionTitle>
+                <ul className="card divide-y divide-line overflow-hidden">
                   {area.openNearby.slice(0, 6).map((p) => (
                     <PlaceRow key={p.id} p={p} />
                   ))}
@@ -229,20 +236,20 @@ export default function AreaPage() {
             )}
 
             <div className="grid grid-cols-2 gap-2">
-              <Link href="/timer" className="card flex items-center gap-2 p-3 text-sm font-semibold text-slate-800">
-                <Timer className="h-5 w-5 text-sky-600" aria-hidden />
+              <Link href="/timer" className="btn btn-outline">
+                <Timer className="h-5 w-5 text-info" aria-hidden />
                 Safety timer
               </Link>
-              <button onClick={share} className="card flex items-center gap-2 p-3 text-left text-sm font-semibold text-slate-800">
-                <Share2 className="h-5 w-5 text-brand-600" aria-hidden />
+              <button onClick={share} className="btn btn-outline">
+                <Share2 className="h-5 w-5 text-brand-ink" aria-hidden />
                 Share location
               </button>
-              <Link href="/report" className="card col-span-2 flex items-center gap-2 p-3 text-sm font-semibold text-slate-800">
-                <MapPin className="h-5 w-5 text-rose-600" aria-hidden />
-                Something wrong here? Report it for others
+              <Link href="/report" className="btn btn-outline col-span-2">
+                <MapPin className="h-5 w-5 text-danger" aria-hidden />
+                Something wrong here? Report it
               </Link>
             </div>
-            <p className="text-xs text-slate-500">
+            <p className="px-1 text-[13px] text-ink-3">
               Based on OpenStreetMap, opening hours, the time of day and community reports within 200 m. It&apos;s guidance, not a guarantee: trust your
               instincts and call 112 in an emergency.
             </p>

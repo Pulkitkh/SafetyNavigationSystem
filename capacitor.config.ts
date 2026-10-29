@@ -14,7 +14,8 @@ const config: CapacitorConfig = {
   appName: "SafeNav",
   // Shown only if the site can't be reached when the app starts.
   webDir: "native/www",
-  server: serverUrl ? { url: serverUrl, cleartext: serverUrl.startsWith("http://") } : undefined,
+  // If the site can't load (no signal, server waking up), the bundled page still offers SOS and helplines.
+  server: serverUrl ? { url: serverUrl, cleartext: serverUrl.startsWith("http://"), errorPath: "offline.html" } : undefined,
   android: {
     // Keeps location updates flowing after 5 minutes in the background.
     useLegacyBridge: true,

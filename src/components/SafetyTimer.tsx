@@ -63,7 +63,7 @@ export function SafetyTimerWatch() {
     sos.trigger("missed_checkin", timer.note ? `safety timer ran out (${timer.note})` : "safety timer ran out");
   }, [timer, expired, now, deadline, sos]);
 
-  if (!timer || path.startsWith("/t/")) return null;
+  if (!timer || path.startsWith("/t/") || path.startsWith("/g/")) return null;
 
   if (!expired) {
     // A small reminder on other screens that a timer is running.
@@ -71,8 +71,9 @@ export function SafetyTimerWatch() {
     return (
       <Link
         href="/timer"
-        className="fixed left-4 z-50 flex items-center gap-2 rounded-full bg-sky-600 px-3 py-2 text-sm font-semibold text-white shadow-lg"
-        style={{ bottom: "calc(5.75rem + env(safe-area-inset-bottom))" }}
+        aria-label={`Safety timer running, ${formatClock(timer.endsAt - now)} left`}
+        className="fixed right-3 z-40 flex min-h-11 items-center gap-2 rounded-full bg-info px-4 text-sm font-bold text-white shadow-float dark:text-[#06142b]"
+        style={{ top: "max(0.75rem, env(safe-area-inset-top))" }}
       >
         <Timer className="h-4 w-4" aria-hidden />
         <span className="tabular-nums">{formatClock(timer.endsAt - now)}</span>
@@ -82,21 +83,21 @@ export function SafetyTimerWatch() {
 
   if (sos.active) return null;
   return (
-    <div className="fixed inset-0 z-[95] flex items-end justify-center bg-black/50 p-4 sm:items-center" role="alertdialog" aria-modal="true" aria-labelledby="timer-title">
-      <div className="w-full max-w-sm rounded-3xl bg-white p-6 text-center shadow-2xl">
-        <h2 id="timer-title" className="text-xl font-bold text-slate-900">
+    <div className="fixed inset-0 z-[95] flex items-end justify-center p-4 sm:items-center" style={{ background: "var(--scrim)" }} role="alertdialog" aria-modal="true" aria-labelledby="timer-title">
+      <div className="sheet-in w-full max-w-sm rounded-3xl bg-surface p-6 text-center shadow-float">
+        <h2 id="timer-title" className="text-2xl font-extrabold text-ink">
           Safety timer: are you OK?
         </h2>
-        {timer.note && <p className="mt-1 text-sm text-slate-600">{timer.note}</p>}
-        <p className="mt-4 text-4xl font-bold tabular-nums text-red-600" aria-live="polite">
+        {timer.note && <p className="mt-1 text-[15px] text-ink-2">{timer.note}</p>}
+        <p className="mt-4 text-5xl font-extrabold tabular-nums text-sos" aria-live="polite">
           {Math.max(0, Math.ceil((deadline - now) / 1000))}
         </p>
-        <p className="text-xs text-slate-500">SOS is sent to your contacts when this reaches zero</p>
+        <p className="text-[13px] text-ink-3">SOS is sent to your contacts when this reaches zero</p>
         <div className="mt-5 grid gap-2">
-          <button onClick={() => store.setTimer(null)} className="rounded-xl bg-green-600 py-3 text-lg font-semibold text-white">
+          <button onClick={() => store.setTimer(null)} className="btn btn-good text-lg">
             I&apos;m safe
           </button>
-          <button onClick={() => store.setTimer({ ...timer, endsAt: Date.now() + 10 * 60_000 })} className="rounded-xl border border-slate-300 py-2.5 font-semibold text-slate-800">
+          <button onClick={() => store.setTimer({ ...timer, endsAt: Date.now() + 10 * 60_000 })} className="btn btn-outline">
             I&apos;m OK, 10 more minutes
           </button>
           <button
@@ -104,7 +105,7 @@ export function SafetyTimerWatch() {
               store.setTimer(null);
               sos.trigger("manual", timer.note);
             }}
-            className="rounded-xl bg-red-600 py-2.5 font-semibold text-white"
+            className="btn btn-sos"
           >
             Send SOS now
           </button>

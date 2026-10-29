@@ -1,10 +1,12 @@
 "use client";
 
+import { BellRing, Check, CircleAlert, Eye, MapPin, Navigation, PhoneCall, Radio, Route, Share2, Volume2, VolumeX, WifiOff } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Map, { type MapMarker } from "@/components/Map";
 import { useSos } from "@/components/Sos";
+import { Callout, EmptyState } from "@/components/ui";
 import { api, formatDistance } from "@/lib/client/api";
 import { batteryLevel, useGeolocation, usePrefs, useSession, useWakeLock } from "@/lib/client/hooks";
 import { isNativeApp } from "@/lib/client/native";
@@ -25,13 +27,16 @@ export default function JourneyPage() {
   const [loaded, setLoaded] = useState(false);
   const [remote, setRemote] = useState<{ id: string; destLabel: string } | null>(null);
   const [isNew, setIsNew] = useState(false);
+  const [notified, setNotified] = useState(0);
   const geo = useGeolocation(!!journey, true);
   useWakeLock(!!journey);
 
   useEffect(() => {
     const j = store.journey();
     setJourney(j);
-    setIsNew(new URLSearchParams(window.location.search).get("new") === "1");
+    const q = new URLSearchParams(window.location.search);
+    setIsNew(q.get("new") === "1");
+    setNotified(Number(q.get("notified")) || 0);
     if (!j) {
       api<{ trip: { id: string; destLabel: string } | null }>("/api/trips")
         .then(({ trip }) => setRemote(trip))
@@ -40,30 +45,41 @@ export default function JourneyPage() {
     } else setLoaded(true);
   }, []);
 
-  if (!loaded) return <main className="p-6 text-slate-600">Loading…</main>;
+  if (!loaded) return <main id="main" className="flex min-h-dvh items-center justify-center text-ink-2">Loading…</main>;
   if (!journey) {
     return (
-      <main className="mx-auto max-w-lg p-6 pb-nav">
-        <h1 className="text-xl font-bold">No journey in progress</h1>
-        {remote ? (
-          <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-            <p>A journey to {remote.destLabel} is still being shared from another device.</p>
-            <button
-              onClick={async () => {
-                await api(`/api/trips/${remote.id}`, { method: "PATCH", json: { status: "ended", reason: "Ended from another device" } }).catch(() => {});
-                setRemote(null);
-              }}
-              className="mt-3 rounded-lg bg-amber-600 px-4 py-2 font-medium text-white"
-            >
-              End that journey
-            </button>
-          </div>
-        ) : (
-          <p className="mt-2 text-slate-600">Plan a route and tap “Start journey” to share your trip live with your contacts.</p>
-        )}
-        <Link href="/" className="mt-6 inline-block rounded-xl bg-brand-600 px-5 py-2.5 font-semibold text-white">
-          Plan a route
-        </Link>
+      <main id="main" className="pt-safe mx-auto max-w-lg px-4 pb-nav">
+        <div className="card mt-4">
+          {remote ? (
+            <EmptyState
+              icon={Radio}
+              title="Journey shared from another device"
+              text={`A journey to ${remote.destLabel} is still being shared.`}
+              action={
+                <button
+                  onClick={async () => {
+                    await api(`/api/trips/${remote.id}`, { method: "PATCH", json: { status: "ended", reason: "Ended from another device" } }).catch(() => {});
+                    setRemote(null);
+                  }}
+                  className="btn btn-outline w-full"
+                >
+                  End that journey
+                </button>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={Route}
+              title="No journey in progress"
+              text="Plan a route and tap Start journey. Your contacts follow you live, and SafeNav checks on you along the way."
+              action={
+                <Link href="/" className="btn btn-primary w-full">
+                  Plan a route
+                </Link>
+              }
+            />
+          )}
+        </div>
       </main>
     );
   }
@@ -78,6 +94,7 @@ export default function JourneyPage() {
       sosActive={sos.active}
       onSos={sos.trigger}
       isNew={isNew}
+      notified={notified}
       onRerouted={(j) => {
         store.setJourney(j);
         setJourney(j);
@@ -99,6 +116,7 @@ function ActiveJourneyView({
   sosActive,
   onSos,
   isNew,
+  notified,
   onRerouted,
   onEnded,
 }: {
@@ -110,6 +128,7 @@ function ActiveJourneyView({
   sosActive: boolean;
   onSos: (t?: "manual" | "missed_checkin" | "deviation") => void;
   isNew: boolean;
+  notified: number;
   onRerouted: (j: ActiveJourney) => void;
   onEnded: () => void;
 }) {
@@ -269,9 +288,12 @@ function ActiveJourneyView({
     }
   };
 
+  const secondsLeft = checkin ? Math.max(0, Math.ceil((checkin.deadline - now) / 1000)) : 0;
+  const C = 2 * Math.PI * 44;
+
   return (
-    <main className="flex h-dvh flex-col md:flex-row">
-      <section className="relative min-h-[45dvh] flex-1 md:order-2">
+    <main id="main" className="flex h-dvh flex-col md:flex-row">
+      <section className="relative min-h-[45dvh] flex-1 md:order-2" aria-label="Map">
         <Map
           routes={[{ id: "route", coordinates: journey.route }]}
           selectedId="route"
@@ -281,93 +303,130 @@ function ActiveJourneyView({
           followUser
         />
         {nextStep && !arrived && (
-          <div className="absolute inset-x-3 top-[max(0.75rem,env(safe-area-inset-top))] rounded-2xl bg-slate-900/90 px-4 py-3 text-white shadow-lg">
-            <p className="text-base font-semibold">{nextStep.instruction}</p>
-            {nextStepDist != null && <p className="text-sm text-slate-300">in {formatDistance(nextStepDist)}</p>}
+          <div className="absolute inset-x-3 top-[max(0.75rem,env(safe-area-inset-top))] flex items-center gap-3 rounded-2xl bg-ink px-4 py-3 text-canvas shadow-float" aria-live="polite">
+            <Navigation className="h-6 w-6 shrink-0" aria-hidden />
+            <div className="min-w-0">
+              <p className="text-[17px] font-extrabold leading-snug">{nextStep.instruction}</p>
+              {nextStepDist != null && <p className="text-sm opacity-80">in {formatDistance(nextStepDist)}</p>}
+            </div>
           </div>
         )}
       </section>
 
-      <section className="max-h-[55dvh] space-y-3 overflow-y-auto bg-slate-50 p-4 pb-nav md:order-1 md:max-h-none md:w-[400px]">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-green-700">{journey.mode === "ride" ? "Ride monitoring on" : "Journey shared live"}</p>
-            <h1 className="text-lg font-bold text-slate-900">To {journey.destLabel}</h1>
-            {journey.vehicle && <p className="text-sm text-slate-600">{journey.vehicle}</p>}
+      <section className="sheet relative z-10 -mt-6 max-h-[58dvh] space-y-3 overflow-y-auto bg-canvas p-4 pb-nav md:order-1 md:mt-0 md:max-h-none md:w-[420px]">
+        <div className="mx-auto -mt-1.5 h-1.5 w-10 rounded-full bg-line-strong md:hidden" aria-hidden />
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="flex items-center gap-1.5 text-[13px] font-extrabold uppercase tracking-wider text-good">
+              <span className="relative flex h-2.5 w-2.5" aria-hidden>
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-good opacity-60" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-good" />
+              </span>
+              {journey.mode === "ride" ? "Ride monitoring on" : "Shared live"}
+            </p>
+            <h1 className="mt-0.5 text-xl font-extrabold leading-tight text-ink">To {journey.destLabel}</h1>
+            {journey.vehicle && <p className="text-sm font-semibold text-ink-2">{journey.vehicle}</p>}
           </div>
-          <div className="text-right text-sm">
-            <p className={late ? "font-semibold text-amber-700" : "text-slate-700"}>ETA {eta}</p>
-            {remainingM != null && <p className="text-slate-500">{formatDistance(remainingM)} left</p>}
+          <div className="shrink-0 text-right">
+            <p className={`text-lg font-extrabold ${late ? "text-caution" : "text-ink"}`}>{eta}</p>
+            <p className="text-[13px] text-ink-2">{remainingM != null ? `${formatDistance(remainingM)} left` : "ETA"}</p>
           </div>
         </div>
 
-        {geo.error && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">{geo.error}</p>}
+        {isNew && notified > 0 && (
+          <Callout tone="good" icon={BellRing}>
+            {notified === 1 ? "1 contact was" : `${notified} contacts were`} notified automatically with your live link.
+          </Callout>
+        )}
+        {geo.error && <Callout tone="caution" icon={CircleAlert}>{geo.error}</Callout>}
         {offRoute && (
-          <div className="rounded-2xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-            <p>You&apos;re {formatDistance(offRouteM)} from the planned route.</p>
-            <button onClick={reroute} disabled={rerouting} className="mt-2 w-full rounded-lg bg-amber-600 px-3 py-2 font-semibold text-white disabled:opacity-60">
+          <div className="rounded-2xl bg-caution-soft p-3.5 text-sm text-ink">
+            <p className="flex items-center gap-2 font-bold">
+              <MapPin className="h-4 w-4 text-caution" aria-hidden />
+              You&apos;re {formatDistance(offRouteM)} from the planned route
+            </p>
+            <button onClick={reroute} disabled={rerouting} className="btn btn-primary mt-2.5 w-full">
               {rerouting ? "Finding the safest way from here…" : "Find a safe route from here"}
             </button>
           </div>
         )}
-        {rerouteError && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{rerouteError}</p>}
-        {offline && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">No connection — your contacts see your last known position. SOS by SMS still works.</p>}
+        {rerouteError && <Callout tone="danger">{rerouteError}</Callout>}
+        {offline && (
+          <Callout tone="caution" icon={WifiOff}>
+            No connection. Your contacts see your last known position. SOS by SMS still works.
+          </Callout>
+        )}
 
         {(isNew || contacts.length === 0) && (
-          <div className="rounded-2xl border border-brand-100 bg-brand-50 p-4 text-sm">
-            <p className="font-semibold text-brand-700">Send the live link to your contacts</p>
-            {contacts.length === 0 ? (
-              <p className="mt-1 text-slate-700">
-                You have no trusted contacts yet. <Link href="/contacts" className="text-brand-600 underline">Add them</Link> or share the link manually.
+          <div className="card p-4">
+            <p className="font-extrabold text-ink">{contacts.length === 0 ? "Share your live link" : notified > 0 ? "Send it to anyone else" : "Send the live link to your contacts"}</p>
+            {contacts.length === 0 && (
+              <p className="mt-1 text-sm text-ink-2">
+                You have no trusted contacts yet.{" "}
+                <Link href="/contacts" className="font-bold text-brand-ink underline">
+                  Add them
+                </Link>{" "}
+                or share the link yourself.
               </p>
-            ) : null}
+            )}
             <div className="mt-3 grid grid-cols-2 gap-2">
               {contacts.length > 0 && (
-                <a href={smsUri(contacts.map((c) => c.phone), shareText, platform)} className="rounded-lg bg-brand-600 px-3 py-2 text-center font-medium text-white">
+                <a href={smsUri(contacts.map((c) => c.phone), shareText, platform)} className="btn btn-secondary btn-sm">
                   SMS contacts
                 </a>
               )}
               {contacts[0] && (
-                <a href={whatsappUri(contacts[0].phone, shareText)} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-green-600 px-3 py-2 text-center font-medium text-white">
+                <a href={whatsappUri(contacts[0].phone, shareText)} target="_blank" rel="noopener noreferrer" className="btn btn-sm bg-[#128c4b] text-white">
                   WhatsApp {contacts[0].name.split(" ")[0]}
                 </a>
               )}
-              <button onClick={share} className="col-span-2 rounded-lg border border-brand-500 px-3 py-2 font-medium text-brand-700">
+              <button onClick={share} className="btn btn-outline btn-sm col-span-2">
+                <Share2 className="h-4 w-4" aria-hidden />
                 Share link…
               </button>
             </div>
           </div>
         )}
 
-        {!isNew && contacts.length > 0 && (
-          <button onClick={share} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800">
-            Share live link again
-          </button>
-        )}
-
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          {canSpeak && (
-            <button
-              onClick={() => setPrefs({ voice: !prefs.voice })}
-              aria-pressed={prefs.voice}
-              className={`rounded-xl border px-3 py-2.5 font-medium ${prefs.voice ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-300 bg-white text-slate-700"}`}
-            >
-              Voice directions {prefs.voice ? "on" : "off"}
+        <div className="grid grid-cols-3 gap-2">
+          {!isNew && contacts.length > 0 && (
+            <button onClick={share} className="btn btn-outline btn-sm flex-col gap-1 py-2.5 text-[13px]">
+              <Share2 className="h-5 w-5" aria-hidden />
+              Share link
             </button>
           )}
-          <Link href="/fake-call" className={`rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-center font-medium text-slate-700 ${canSpeak ? "" : "col-span-2"}`}>
+          {canSpeak && (
+            <button onClick={() => setPrefs({ voice: !prefs.voice })} aria-pressed={prefs.voice} className="btn btn-outline btn-sm flex-col gap-1 py-2.5 text-[13px]">
+              {prefs.voice ? <Volume2 className="h-5 w-5" aria-hidden /> : <VolumeX className="h-5 w-5" aria-hidden />}
+              Voice {prefs.voice ? "on" : "off"}
+            </button>
+          )}
+          <Link href="/fake-call" className="btn btn-outline btn-sm flex-col gap-1 py-2.5 text-[13px]">
+            <PhoneCall className="h-5 w-5" aria-hidden />
             Fake call
           </Link>
         </div>
 
-        <div className="rounded-2xl bg-white p-4 text-sm text-slate-600">
-          <p className="font-medium text-slate-800">SafeNav is watching for</p>
-          <ul className="mt-1 list-inside list-disc space-y-0.5">
-            <li>leaving the route by more than {cfg.offRouteM} m</li>
-            <li>no movement for {Math.round(cfg.stoppedForMs / 60_000)} minutes</li>
-            <li>arriving more than {Math.round(cfg.overdueGraceMs / 60_000)} minutes late</li>
+        <div className="card p-4 text-sm text-ink-2">
+          <p className="flex items-center gap-2 font-bold text-ink">
+            <Eye className="h-4 w-4 text-brand-ink" aria-hidden />
+            SafeNav is watching for
+          </p>
+          <ul className="mt-2 space-y-1.5">
+            <li className="flex gap-2">
+              <Check className="mt-0.5 h-4 w-4 shrink-0 text-good" aria-hidden />
+              Leaving the route by more than {cfg.offRouteM} m
+            </li>
+            <li className="flex gap-2">
+              <Check className="mt-0.5 h-4 w-4 shrink-0 text-good" aria-hidden />
+              No movement for {Math.round(cfg.stoppedForMs / 60_000)} minutes
+            </li>
+            <li className="flex gap-2">
+              <Check className="mt-0.5 h-4 w-4 shrink-0 text-good" aria-hidden />
+              Arriving more than {Math.round(cfg.overdueGraceMs / 60_000)} minutes late
+            </li>
           </ul>
-          <p className="mt-2">
+          <p className="mt-2.5 text-[13px]">
             {nativeApp
               ? "Tracking continues with the screen locked while the SafeNav notification is showing."
               : "Keep this screen open: browsers pause location in the background. The SafeNav app keeps tracking with the screen locked."}
@@ -375,34 +434,41 @@ function ActiveJourneyView({
         </div>
 
         {confirmEnd ? (
-          <div className="flex gap-2">
-            <button onClick={() => end("Ended by user")} className="flex-1 rounded-xl bg-slate-900 px-4 py-3 font-semibold text-white">
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => end("Ended by user")} className="btn btn-primary">
               End journey
             </button>
-            <button onClick={() => setConfirmEnd(false)} className="flex-1 rounded-xl border border-slate-300 px-4 py-3">
+            <button onClick={() => setConfirmEnd(false)} className="btn btn-outline">
               Keep going
             </button>
           </div>
         ) : (
-          <button onClick={() => setConfirmEnd(true)} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 font-medium text-slate-800">
-            I&apos;ve arrived / end journey
+          <button onClick={() => setConfirmEnd(true)} className="btn btn-outline w-full">
+            I&apos;ve arrived, end journey
           </button>
         )}
       </section>
 
       {checkin && !sosActive && (
-        <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-4 sm:items-center" role="alertdialog" aria-modal="true" aria-labelledby="checkin-title">
-          <div className="w-full max-w-sm rounded-3xl bg-white p-6 text-center shadow-2xl">
-            <h2 id="checkin-title" className="text-xl font-bold text-slate-900">
+        <div className="fixed inset-0 z-[95] flex items-end justify-center p-4 sm:items-center" style={{ background: "var(--scrim)" }} role="alertdialog" aria-modal="true" aria-labelledby="checkin-title">
+          <div className="sheet-in w-full max-w-sm rounded-3xl bg-surface p-6 text-center shadow-float">
+            <h2 id="checkin-title" className="text-2xl font-extrabold text-ink">
               Are you OK?
             </h2>
-            <p className="mt-1 text-slate-600">{ANOMALY_TEXT[checkin.anomaly]}</p>
-            <p className="mt-4 text-4xl font-bold tabular-nums text-red-600" aria-live="polite">
-              {Math.max(0, Math.ceil((checkin.deadline - now) / 1000))}
-            </p>
-            <p className="text-xs text-slate-500">{autoSos ? "SOS is sent automatically when the timer ends" : "Automatic SOS is off in your settings"}</p>
+            <p className="mt-1 text-ink-2">{ANOMALY_TEXT[checkin.anomaly]}</p>
+            <div className="relative mx-auto my-4 h-28 w-28">
+              <svg viewBox="0 0 100 100" className="-rotate-90" aria-hidden>
+                <circle cx="50" cy="50" r="44" fill="none" stroke="var(--surface-3)" strokeWidth="8" />
+                <circle cx="50" cy="50" r="44" fill="none" stroke="var(--sos)" strokeWidth="8" strokeLinecap="round" strokeDasharray={`${(secondsLeft / CHECKIN_TIMEOUT_S) * C} ${C}`} style={{ transition: "stroke-dasharray 1s linear" }} />
+              </svg>
+              <span className="absolute inset-0 flex items-center justify-center text-4xl font-extrabold tabular-nums text-ink" aria-live="polite">
+                {secondsLeft}
+              </span>
+            </div>
+            <p className="text-[13px] text-ink-3">{autoSos ? "SOS is sent automatically when the timer ends" : "Automatic SOS is off in your account settings"}</p>
             <div className="mt-5 grid gap-2">
-              <button onClick={answerOk} className="rounded-xl bg-green-600 py-3 text-lg font-semibold text-white">
+              <button onClick={answerOk} className="btn btn-good text-lg">
+                <Check className="h-5 w-5" strokeWidth={3} aria-hidden />
                 I&apos;m OK
               </button>
               {checkin.anomaly === "off_route" && journey.mode === "walk" && (
@@ -411,7 +477,7 @@ function ActiveJourneyView({
                     answerOk();
                     void reroute();
                   }}
-                  className="rounded-xl border border-green-600 py-2.5 font-semibold text-green-700"
+                  className="btn btn-outline"
                 >
                   I&apos;m OK, reroute me
                 </button>
@@ -421,7 +487,7 @@ function ActiveJourneyView({
                   setCheckin(null);
                   onSos("manual");
                 }}
-                className="rounded-xl bg-red-600 py-3 font-semibold text-white"
+                className="btn btn-sos"
               >
                 Send SOS now
               </button>
@@ -431,22 +497,22 @@ function ActiveJourneyView({
       )}
 
       {arrived && (
-        <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/40 p-4 sm:items-center" role="dialog" aria-modal="true" aria-labelledby="arrived-title">
-          <div className="w-full max-w-sm rounded-3xl bg-white p-6 text-center shadow-2xl">
-            <h2 id="arrived-title" className="text-xl font-bold text-green-700">
+        <div className="fixed inset-0 z-[95] flex items-end justify-center p-4 sm:items-center" style={{ background: "var(--scrim)" }} role="dialog" aria-modal="true" aria-labelledby="arrived-title">
+          <div className="sheet-in w-full max-w-sm rounded-3xl bg-surface p-6 text-center shadow-float">
+            <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-good-soft text-good" aria-hidden>
+              <Check className="h-8 w-8" strokeWidth={3} />
+            </span>
+            <h2 id="arrived-title" className="mt-3 text-2xl font-extrabold text-ink">
               You&apos;ve arrived
             </h2>
-            <p className="mt-1 text-slate-600">Let your contacts know you reached safely.</p>
-            <div className="mt-4 grid gap-2">
+            <p className="mt-1 text-ink-2">Let your contacts know you reached safely.</p>
+            <div className="mt-5 grid gap-2">
               {contacts.length > 0 && (
-                <a
-                  href={smsUri(contacts.map((c) => c.phone), `${userName} reached ${journey.destLabel} safely.`, platform)}
-                  className="rounded-xl bg-brand-600 py-3 font-semibold text-white"
-                >
-                  Send “reached safely”
+                <a href={smsUri(contacts.map((c) => c.phone), `${userName} reached ${journey.destLabel} safely.`, platform)} className="btn btn-secondary">
+                  Send &ldquo;reached safely&rdquo;
                 </a>
               )}
-              <button onClick={() => end("Arrived")} className="rounded-xl bg-green-600 py-3 font-semibold text-white">
+              <button onClick={() => end("Arrived")} className="btn btn-good">
                 End journey
               </button>
               <button
@@ -454,7 +520,7 @@ function ActiveJourneyView({
                   arrivalSnoozedUntil.current = Date.now() + 3 * 60_000;
                   setArrived(false);
                 }}
-                className="text-sm text-slate-500 underline"
+                className="btn btn-ghost btn-sm"
               >
                 Not there yet
               </button>

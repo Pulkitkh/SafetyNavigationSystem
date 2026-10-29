@@ -1,93 +1,329 @@
 @import "tailwindcss";
 
-@theme {
-  --color-brand-50: #f5f3ff;
-  --color-brand-100: #ede9fe;
-  --color-brand-200: #ddd6fe;
-  --color-brand-300: #c4b5fd;
-  --color-brand-500: #7c3aed;
-  --color-brand-600: #6d28d9;
-  --color-brand-700: #5b21b6;
-  --color-brand-800: #4c1d95;
-  --color-brand-900: #2e1065;
-  --color-sos: #e11d48;
-  --color-sos-dark: #be123c;
-  --color-good: #15803d;
-  --color-caution: #b45309;
-  --color-avoid: #b91c1c;
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
-}
+/*
+ * SafeNav design tokens.
+ *
+ * Colour has fixed meanings everywhere: violet is the brand and primary action,
+ * green is "safer", amber is "caution", red is "avoid" and red-pink is only ever
+ * SOS. Components use the semantic names below (bg-surface, text-ink-2, ...),
+ * never raw palette colours, so light and dark themes stay consistent.
+ * Contrast: ink on surface ≥ 12:1, ink-2 ≥ 7:1, ink-3 ≥ 4.5:1 in both themes.
+ */
+
+@custom-variant dark (&:where(.dark, .dark *));
 
 :root {
   color-scheme: light;
+  --canvas: #f5f5fa;
+  --surface: #ffffff;
+  --surface-2: #f0eff7;
+  --surface-3: #e5e3f1;
+  --ink: #15131f;
+  --ink-2: #4b4862;
+  --ink-3: #6b6884;
+  --line: #e3e1ee;
+  --line-strong: #cfcce0;
+
+  --brand: #5b3fd6;
+  --brand-strong: #4a2fc0;
+  --brand-ink: #4a2fc0; /* brand-coloured text on surfaces */
+  --brand-soft: #eeeaff;
+  --brand-soft-ink: #3f27a8;
+  --on-brand: #ffffff;
+
+  --good: #0f7a55;
+  --good-soft: #e3f6ee;
+  --caution: #9a4f05;
+  --caution-soft: #fff3df;
+  --danger: #b9173a;
+  --danger-soft: #ffe8ec;
+  --info: #1f5fbf;
+  --info-soft: #e6effd;
+
+  --sos: #e11d48;
+  --sos-strong: #be123c;
+
+  --shadow-card: 0 1px 2px rgb(21 19 31 / 0.05), 0 8px 24px -12px rgb(46 25 140 / 0.18);
+  --shadow-float: 0 12px 32px -10px rgb(21 19 31 / 0.35);
+  --scrim: rgb(10 8 20 / 0.55);
+}
+
+.dark {
+  color-scheme: dark;
+  --canvas: #0c0b14;
+  --surface: #16151f;
+  --surface-2: #1f1e2b;
+  --surface-3: #2a2938;
+  --ink: #f1f0f7;
+  --ink-2: #c3c1d6;
+  --ink-3: #9a98b0;
+  --line: #2b2a3a;
+  --line-strong: #3b3a4e;
+
+  --brand: #6a52e3;
+  --brand-strong: #5c44d6;
+  --brand-ink: #b2a5ff;
+  --brand-soft: #262046;
+  --brand-soft-ink: #cfc6ff;
+  --on-brand: #ffffff;
+
+  --good: #4ade9b;
+  --good-soft: #10291f;
+  --caution: #fbbf4a;
+  --caution-soft: #2e2311;
+  --danger: #ff7d95;
+  --danger-soft: #34131c;
+  --info: #7db3ff;
+  --info-soft: #14233b;
+
+  --shadow-card: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 8px 24px -12px rgb(0 0 0 / 0.6);
+  --shadow-float: 0 12px 32px -10px rgb(0 0 0 / 0.7);
+  --scrim: rgb(0 0 0 / 0.65);
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-soft-ink: var(--brand-soft-ink);
+  --color-on-brand: var(--on-brand);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-caution: var(--caution);
+  --color-caution-soft: var(--caution-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-sos: var(--sos);
+  --color-sos-strong: var(--sos-strong);
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  --shadow-card: var(--shadow-card);
+  --shadow-float: var(--shadow-float);
+}
+
+@theme {
+  --radius-control: 0.875rem;
+  --radius-card: 1.25rem;
+  --radius-sheet: 1.75rem;
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 html,
 body {
-  background: #f6f5fb;
-  color: #0f172a;
+  background: var(--canvas);
+  color: var(--ink);
   -webkit-tap-highlight-color: transparent;
+  text-rendering: optimizeLegibility;
 }
 
-/* Keep content clear of the bottom navigation, the floating SOS button and the iOS home indicator. */
+/* Visible keyboard focus everywhere, never removed. */
+:focus-visible {
+  outline: 3px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+
+::selection {
+  background: var(--brand-soft);
+  color: var(--brand-soft-ink);
+}
+
+/* Keep content clear of the bottom navigation and the iOS home indicator. */
 .pb-nav {
-  padding-bottom: calc(9.5rem + env(safe-area-inset-bottom));
+  padding-bottom: calc(7.5rem + env(safe-area-inset-bottom));
 }
 
-.map-pin {
-  width: 26px;
-  height: 26px;
-  border-radius: 9999px;
-  border: 2px solid #fff;
-  color: #fff;
-  font: 700 13px/22px ui-sans-serif, system-ui, sans-serif;
-  text-align: center;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
-  cursor: pointer;
+.pt-safe {
+  padding-top: max(1rem, env(safe-area-inset-top));
 }
 
-.maplibregl-ctrl-bottom-right {
-  bottom: calc(5.5rem + env(safe-area-inset-bottom));
-}
-
-@keyframes sos-pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgb(220 38 38 / 0.55);
+@layer components {
+  .card {
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
+    outline: 1px solid var(--line);
+    outline-offset: -1px;
   }
-  70% {
-    box-shadow: 0 0 0 18px rgb(220 38 38 / 0);
+
+  .card-inset {
+    border-radius: var(--radius-control);
+    background: var(--surface-2);
   }
-  100% {
-    box-shadow: 0 0 0 0 rgb(220 38 38 / 0);
+
+  /* Buttons: 48px tall minimum, 150 ms press feedback without moving layout. */
+  .btn {
+    display: inline-flex;
+    min-height: 3rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: var(--radius-control);
+    padding: 0.75rem 1.125rem;
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
+    transition:
+      background-color 150ms,
+      box-shadow 150ms,
+      opacity 150ms,
+      transform 150ms var(--ease-out-soft);
+    cursor: pointer;
+    user-select: none;
   }
-}
-
-.sos-pulse {
-  animation: sos-pulse 2s infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sos-pulse {
-    animation: none;
+  .btn:active:not(:disabled) {
+    transform: scale(0.98);
   }
-}
+  .btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+  .btn-primary {
+    background: var(--brand);
+    color: var(--on-brand);
+    box-shadow: 0 6px 16px -8px var(--brand);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--brand-strong);
+  }
+  .btn-secondary {
+    background: var(--brand-soft);
+    color: var(--brand-soft-ink);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--brand-soft) 80%, var(--brand) 20%);
+  }
+  .btn-outline {
+    background: var(--surface);
+    color: var(--ink);
+    box-shadow: inset 0 0 0 1.5px var(--line-strong);
+  }
+  .btn-outline:hover:not(:disabled) {
+    background: var(--surface-2);
+  }
+  .btn-ghost {
+    color: var(--brand-ink);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--surface-2);
+  }
+  .btn-good {
+    background: var(--good);
+    color: #fff;
+  }
+  .dark .btn-good {
+    color: #062217;
+  }
+  .btn-sos {
+    background: var(--sos);
+    color: #fff;
+    box-shadow: 0 8px 20px -8px var(--sos);
+  }
+  .btn-sos:hover:not(:disabled) {
+    background: var(--sos-strong);
+  }
+  .btn-sm {
+    min-height: 2.5rem;
+    padding: 0.5rem 0.875rem;
+    font-size: 0.875rem;
+  }
 
-/* Shared surfaces */
-.card {
-  border-radius: 1.25rem;
-  background: #fff;
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 4px 16px -6px rgb(46 16 101 / 0.12);
-  outline: 1px solid rgb(15 23 42 / 0.05);
-}
+  /* Chips and toggles */
+  .chip {
+    display: inline-flex;
+    min-height: 2.5rem;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: 9999px;
+    padding: 0.4rem 0.875rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    background: var(--surface);
+    color: var(--ink-2);
+    box-shadow: inset 0 0 0 1.5px var(--line);
+    transition:
+      background-color 150ms,
+      color 150ms,
+      box-shadow 150ms;
+    cursor: pointer;
+  }
+  .chip[aria-pressed="true"],
+  .chip[aria-selected="true"],
+  .chip[data-on="true"] {
+    background: var(--brand-soft);
+    color: var(--brand-soft-ink);
+    box-shadow: inset 0 0 0 1.5px var(--brand);
+  }
 
-.brand-gradient {
-  background-image: linear-gradient(135deg, #6d28d9 0%, #4f46e5 55%, #2563eb 100%);
+  .field {
+    width: 100%;
+    min-height: 3rem;
+    border-radius: var(--radius-control);
+    background: var(--surface-2);
+    color: var(--ink);
+    padding: 0.75rem 0.875rem;
+    font-size: 1rem;
+    box-shadow: inset 0 0 0 1.5px transparent;
+    transition: box-shadow 150ms;
+  }
+  .field::placeholder {
+    color: var(--ink-3);
+  }
+  .field:focus {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--brand);
+  }
+  .field[aria-invalid="true"] {
+    box-shadow: inset 0 0 0 2px var(--danger);
+  }
+
+  .label {
+    display: block;
+    margin-bottom: 0.375rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  .eyebrow {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .tap {
+    transition: background-color 150ms;
+  }
+  .tap:hover {
+    background: var(--surface-2);
+  }
+  .tap:active {
+    background: var(--surface-3);
+  }
+
+  .hero-gradient {
+    background-image: radial-gradient(120% 140% at 0% 0%, #7c5cff 0%, #5b3fd6 45%, #3a2aa8 100%);
+    color: #fff;
+  }
 }
 
 .sheet {
-  border-top-left-radius: 1.75rem;
-  border-top-right-radius: 1.75rem;
-  box-shadow: 0 -8px 30px -12px rgb(46 16 101 / 0.25);
+  border-top-left-radius: var(--radius-sheet);
+  border-top-right-radius: var(--radius-sheet);
+  box-shadow: 0 -10px 30px -14px rgb(21 19 31 / 0.35);
 }
 
 @media (min-width: 768px) {
@@ -97,6 +333,131 @@ body {
   }
 }
 
+/* Map */
+.map-pin {
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px;
+  border: 2.5px solid #fff;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.35);
+  cursor: pointer;
+}
+.map-pin svg {
+  width: 15px;
+  height: 15px;
+}
+
+.maplibregl-ctrl-bottom-right {
+  bottom: 0.5rem;
+}
+.maplibregl-ctrl-group {
+  border-radius: 0.875rem !important;
+  overflow: hidden;
+}
+.dark .maplibregl-ctrl-group {
+  background: var(--surface) !important;
+}
+.dark .maplibregl-ctrl-group button + button {
+  border-top-color: var(--line) !important;
+}
+.dark .maplibregl-ctrl-icon {
+  filter: invert(1);
+}
+.dark .maplibregl-ctrl-attrib {
+  background: rgb(22 21 31 / 0.8) !important;
+  color: var(--ink-2);
+}
+.dark .maplibregl-ctrl-attrib a {
+  color: var(--ink-2);
+}
+.maplibregl-popup-content {
+  border-radius: 0.75rem !important;
+  font: 600 13px/1.35 var(--font-jakarta), system-ui, sans-serif;
+  color: #15131f;
+}
 .pick-mode .maplibregl-canvas {
   cursor: crosshair;
+}
+
+/* Motion: short, meaningful, and off for people who ask for less. */
+@keyframes sos-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(225 29 72 / 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 16px rgb(225 29 72 / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(225 29 72 / 0);
+  }
+}
+.sos-pulse {
+  animation: sos-pulse 2.2s infinite;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise {
+  animation: rise 320ms var(--ease-out-soft) both;
+}
+.rise-1 {
+  animation-delay: 40ms;
+}
+.rise-2 {
+  animation-delay: 80ms;
+}
+.rise-3 {
+  animation-delay: 120ms;
+}
+.rise-4 {
+  animation-delay: 160ms;
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+.sheet-in {
+  animation: sheet-in 280ms var(--ease-out-soft) both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.fade-in {
+  animation: fade-in 200ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+  .sos-pulse {
+    animation: none;
+  }
 }
