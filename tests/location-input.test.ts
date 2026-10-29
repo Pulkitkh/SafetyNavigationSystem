@@ -101,10 +101,13 @@ describe("geocoder results", () => {
     const b = { ...a, source: "photon" as const, lng: 75.8547 };
     const c = { ...a, label: "Sarafa Bazaar", lat: 22.7202 };
     expect(mergePlaces([[a], [b, c]])).toHaveLength(2);
-    // The same landmark pinned ~800 m apart by two sources is one place; two police stations that close are not.
-    const hub = { ...a, label: "DLF Cyber Hub", lat: 28.4955, lng: 77.0893 };
-    const hub2 = { ...hub, label: "DLF Cyber-Hub", source: "ola" as const, lat: 28.5025 };
-    expect(mergePlaces([[hub], [hub2]])).toHaveLength(1);
+    // The same landmark pinned 1.4 km apart by two sources is one place, keeping the nearer pin;
+    // two police stations that close are not the same place.
+    const hub = { ...a, label: "DLF Cyber Hub", lat: 28.4962, lng: 77.1025, distance: 1403 };
+    const hub2 = { ...hub, label: "DLF Cyber-Hub", source: "ola" as const, lat: 28.4951, lng: 77.0886, distance: 583 };
+    const merged = mergePlaces([[hub, hub2]]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].distance).toBe(583);
     const ps = { ...a, label: "Police Station" };
     expect(mergePlaces([[ps], [{ ...ps, lat: ps.lat + 0.005 }]])).toHaveLength(2);
     expect(a.kind).toBe("Attraction");

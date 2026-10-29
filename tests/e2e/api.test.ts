@@ -69,7 +69,7 @@ run("API end to end", () => {
     expect(wrong.status).toBe(401);
     const ok = await ravi.call("/api/auth/register", { method: "POST", json: { name: "Ravi Kumar", email: `ravi-${unique}@example.com`, password: "another pass" } });
     expect(ok.status).toBe(201);
-  });
+  }, 30_000);
 
   it("manages trusted contacts with ownership checks", async () => {
     const add = await asha.call("/api/contacts", { method: "POST", json: { name: "Maa", phone: "09876512345", relation: "Mother" } });

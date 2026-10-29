@@ -171,17 +171,19 @@ function nameKey(label: string) {
 
 /**
  * Same place reported twice (by several services, as node and way, or pinned at
- * different entrances): the same name within 1.2 km, or 300 m for generic names
- * like "Police station" that many separate places share.
+ * different entrances or by different sources): the same name within 2 km, or
+ * 300 m for generic names like "Police station" that many separate places share.
+ * Of two copies, the one nearer the user is kept, in the better-ranked slot.
  */
 export function mergePlaces(lists: Place[][], limit = 10): Place[] {
   const out: Place[] = [];
   for (const list of lists) {
     for (const p of list) {
       const key = nameKey(p.label);
-      const radius = GENERIC_NAME.test(key) ? 300 : 1200;
-      const dup = out.some((o) => nameKey(o.label) === key && haversine([o.lng, o.lat], [p.lng, p.lat]) < radius);
-      if (!dup) out.push(p);
+      const radius = GENERIC_NAME.test(key) ? 300 : 2000;
+      const i = out.findIndex((o) => nameKey(o.label) === key && haversine([o.lng, o.lat], [p.lng, p.lat]) < radius);
+      if (i < 0) out.push(p);
+      else if (p.distance != null && out[i].distance != null && p.distance < out[i].distance!) out[i] = p;
     }
   }
   return out.slice(0, limit);

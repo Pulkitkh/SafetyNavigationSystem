@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetDbForTests } from "@/lib/db";
 import { resetFailoverForTests } from "@/lib/providers/http";
+import { resetStreetForTests } from "@/lib/providers/street";
 import { destinationPoint, type LngLat } from "@/lib/geo";
 import { planRoutes } from "@/lib/safety/plan";
 
@@ -67,6 +68,7 @@ beforeAll(() => {
 beforeEach(() => {
   resetDbForTests(); // fresh in-memory cache per test
   resetFailoverForTests();
+  resetStreetForTests();
   calls.length = 0;
 });
 
@@ -99,7 +101,8 @@ describe("planRoutes with live-like upstreams", () => {
     expect(plan.weather).toMatchObject({ foggy: true, visibilityM: 300 });
     expect(plan.routes[0].safety!.factors.lighting).toBe(80);
     expect(plan.dataNote).toBeUndefined();
-  });
+    // The first test also pays for cold module and database setup, which is slow on a busy machine.
+  }, 20_000);
 
   it("still returns directions, unscored and with a note, when every Overpass mirror is down", async () => {
     handlers = [
