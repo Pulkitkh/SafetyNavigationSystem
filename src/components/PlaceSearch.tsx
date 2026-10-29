@@ -13,6 +13,7 @@ export interface PlaceValue {
   current?: boolean;
   kind?: string;
   distance?: number;
+  source?: string;
 }
 
 interface Props {
@@ -36,6 +37,7 @@ interface ApiPlace {
   lat: number;
   kind?: string;
   distance?: number;
+  source?: string;
 }
 
 function kindIcon(kind?: string): LucideIcon {
@@ -98,7 +100,7 @@ export function PlaceSearch({ label, placeholder, value, onChange, near, allowCu
       }
       const res = await api<{ places: ApiPlace[]; degraded?: boolean }>(`/api/geocode/search?${params}`);
       if (mine !== seq.current) return;
-      setResults(res.places.map((p) => ({ label: p.label, detail: p.detail, point: [p.lng, p.lat], kind: p.kind, distance: p.distance })));
+      setResults(res.places.map((p) => ({ label: p.label, detail: p.detail, point: [p.lng, p.lat], kind: p.kind, distance: p.distance, source: p.source })));
       setDegraded(!!res.degraded);
       setError(null);
       if (deep) setSearchedDeep(q);
@@ -223,6 +225,11 @@ export function PlaceSearch({ label, placeholder, value, onChange, near, allowCu
           {error && <li className="px-4 py-2 text-sm text-red-700">{error}</li>}
           {degraded && !error && <li className="px-4 py-2 text-xs text-amber-800">Quick search is busy. Press Enter or “Search all places”.</li>}
           {noResults && !degraded && <li className="px-4 py-2 text-sm text-slate-500">No quick matches. Try a full search, a nearby landmark, or pick it on the map.</li>}
+          {typing && results.some((r) => r.source === "ola") && (
+            <li className="px-4 pb-1 pt-0.5 text-[10px] text-slate-400" aria-hidden>
+              Includes results from Ola Maps
+            </li>
+          )}
           {options.map((o, i) => {
             const activeCls = i === active ? "bg-brand-50" : "hover:bg-slate-50";
             if (o.type === "deep" || o.type === "map") {

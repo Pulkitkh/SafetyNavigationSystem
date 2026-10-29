@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { checkUpstreams, summarise } from "@/lib/providers/health";
+import { olaEnabled } from "@/lib/providers/ola";
 import { json, rateLimit, route } from "@/lib/server/http";
 
 export const dynamic = "force-dynamic";
@@ -23,5 +24,7 @@ export const GET = route(async (req: NextRequest) => {
   const probes = await checkUpstreams();
   const { ok, services } = summarise(probes);
   const healthy = ok && database;
-  return json({ ok: healthy, database, services, probes, checkedAt: new Date().toISOString() }, healthy ? 200 : 503);
+  // Optional extras are reported but not probed, so health checks don't spend their quotas.
+  const optional = { "place search (Ola Maps)": olaEnabled() ? "configured" : "not configured" };
+  return json({ ok: healthy, database, services, optional, probes, checkedAt: new Date().toISOString() }, healthy ? 200 : 503);
 });

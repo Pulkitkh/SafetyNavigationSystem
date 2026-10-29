@@ -1,6 +1,7 @@
 import { haversine, type LngLat } from "@/lib/geo";
 import { parseMapLink } from "@/lib/location-input";
 import { cached, fetchJson, userAgent } from "./http";
+import { olaSearch } from "./ola";
 
 export interface Place {
   label: string;
@@ -11,7 +12,7 @@ export interface Place {
   kind?: string;
   /** Metres from the search reference point, when one was given. */
   distance?: number;
-  source?: "photon" | "nominatim" | "input";
+  source?: "photon" | "nominatim" | "ola" | "input";
 }
 
 // India bounding box (minLon,minLat,maxLon,maxLat). It also covers parts of
@@ -257,17 +258,29 @@ export interface SearchResult {
   degraded?: boolean;
 }
 
-/** Search-as-you-type uses Photon; `deep` (an explicit search) also asks Nominatim. */
+/**
+ * Search-as-you-type uses Photon (and Ola Maps when configured); `deep` (an
+ * explicit search) also asks Nominatim. Results from all sources are merged and
+ * ranked together.
+ */
 export async function searchPlaces(query: string, near?: LngLat, { deep = false } = {}): Promise<SearchResult> {
-  const [photonResult, nominatimResult] = await Promise.allSettled([photon(query, near), deep ? nominatim(query, near) : Promise.resolve([])]);
+  const [photonResult, nominatimResult, olaResult] = await Promise.allSettled([
+    photon(query, near),
+    deep ? nominatim(query, near) : Promise.resolve([]),
+    olaSearch(query, near),
+  ]);
   const fromPhoton = photonResult.status === "fulfilled" ? photonResult.value : [];
   const fromNominatim = nominatimResult.status === "fulfilled" ? nominatimResult.value : [];
-  if (photonResult.status === "rejected" && (!deep || nominatimResult.status === "rejected")) {
+  const fromOla = olaResult.status === "fulfilled" ? olaResult.value : [];
+  if (olaResult.status === "rejected") console.warn(`[search] Ola Maps: ${(olaResult.reason as Error).message}`);
+  const anyResults = fromPhoton.length || fromNominatim.length || fromOla.length;
+  if (photonResult.status === "rejected" && !anyResults && (!deep || nominatimResult.status === "rejected")) {
     if (!deep) return { places: [], degraded: true };
     throw photonResult.reason;
   }
-  const places = rankPlaces(mergePlaces(deep ? [fromNominatim, fromPhoton] : [fromPhoton], 20), query, near).slice(0, 10);
-  return { places, degraded: photonResult.status === "rejected" };
+  const lists = deep ? [fromNominatim, fromOla, fromPhoton] : [fromOla, fromPhoton];
+  const places = rankPlaces(mergePlaces(lists, 30), query, near).slice(0, 10);
+  return { places, degraded: photonResult.status === "rejected" && !fromOla.length };
 }
 
 /** Only Google's own map hosts may be fetched, so a crafted link can't point the server at internal addresses. */

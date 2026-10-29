@@ -40,6 +40,7 @@ Known limit: browsers pause location when the screen is locked or the app is in 
 | Fallback and wheelchair routing | [Valhalla](https://valhalla.github.io/valhalla/) on valhalla1.openstreetmap.de | When OSRM is down; step-free routes |
 | Place search (autocomplete) | [Photon](https://photon.komoot.io) | Search as you type |
 | Full search, reverse geocoding | [Nominatim](https://nominatim.org) | Explicit searches (Enter / "Search all places"), names for map taps and links. Throttled to 1 request per second, never used for autocomplete, per its policy |
+| Extra place search (optional) | [Ola Maps](https://maps.olakrutrim.com) Places autocomplete | Indian shops, buildings and addresses missing from OpenStreetMap. Used only when `OLA_MAPS_API_KEY` is set, with a daily cap (`OLA_MAPS_DAILY_LIMIT`, default 3000) |
 | Plus codes | [Open Location Code](https://github.com/google/open-location-code) (decoded locally) | Codes copied from Google Maps |
 | Hourly forecast: rain, thunderstorms, visibility | [Open-Meteo](https://open-meteo.com) | Fewer people out in rain, fog dims lighting, flooded underpasses |
 | Sunrise, sunset, twilight | [SunCalc](https://github.com/mourner/suncalc) (computed locally) | Day/night weighting |
@@ -115,6 +116,14 @@ npm run smoke:live                        # or: npm run smoke:live -- https://yo
 ```
 
 `scripts/smoke-live.mjs` first prints the health of every upstream. It then plans real walks in Delhi, Mumbai, Bengaluru, Indore and Kolkata, by day and at night, plus one step-free walk. It checks that routes are scored, ranked, explained and timed correctly, and exits non-zero on any failure.
+
+### Ola Maps search (optional, free tier)
+
+1. Sign in at [maps.olakrutrim.com](https://maps.olakrutrim.com), create a project and copy its API key.
+2. Set `OLA_MAPS_API_KEY` on the server (on Render: service → Environment).
+3. `/api/health` then lists `"place search (Ola Maps)": "configured"`. Search shows "Includes results from Ola Maps" when Ola contributes.
+
+Ola results are merged with the OpenStreetMap ones and ranked together. If Ola is down, over quota or not configured, search carries on without it. Check Ola's current terms for attribution and caching rules; SafeNav caches Ola answers for one hour.
 
 ### Automatic SOS SMS (optional)
 
