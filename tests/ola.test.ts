@@ -21,6 +21,15 @@ describe("Ola Maps predictions", () => {
     expect(p!.distance).toBeLessThan(3000);
   });
 
+  it("drops the repeated short name and duplicate localities Ola returns", () => {
+    const p = olaToPlace({
+      structured_formatting: { main_text: "56 Dukan Street", secondary_text: "56 Dukan St, New Palasia, New Palasia, Indore, Madhya Pradesh, 452001, India" },
+      geometry: { location: { lat: 22.7241, lng: 75.8845 } },
+      types: ["street_address"],
+    });
+    expect(p!.detail).toBe("New Palasia, Indore, Madhya Pradesh");
+  });
+
   it("reads text-search-style results and drops ones without coordinates", () => {
     expect(olaToPlace({ name: "AIIMS Bhopal", formatted_address: "Saket Nagar, Bhopal, India", geometry: { location: { lat: 23.2, lng: 77.46 } }, types: ["hospital"] })).toMatchObject({
       label: "AIIMS Bhopal",

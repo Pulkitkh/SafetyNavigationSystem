@@ -82,10 +82,17 @@ export function olaToPlace(p: OlaPrediction, near?: LngLat): Place | null {
   const label = p.structured_formatting?.main_text || p.name || p.description?.split(",")[0];
   if (!label) return null;
   const full = p.structured_formatting?.secondary_text || p.formatted_address || p.description || "";
+  // Ola often repeats the name in short form ("56 Dukan St" after "56 Dukan Street") and repeats localities.
+  const seen = new Set<string>();
   const detail = full
     .split(",")
     .map((s) => s.trim())
-    .filter((s) => s && s !== label && !/^india$/i.test(s) && !/^\d{6}$/.test(s))
+    .filter((s) => {
+      const key = s.toLowerCase();
+      if (!s || seen.has(key) || label.toLowerCase().startsWith(key) || /^india$/i.test(s) || /^\d{6}$/.test(s)) return false;
+      seen.add(key);
+      return true;
+    })
     .slice(0, 3)
     .join(", ");
   return {
