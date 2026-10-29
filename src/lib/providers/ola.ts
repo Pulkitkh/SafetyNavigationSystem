@@ -92,6 +92,8 @@ export function olaToPlace(p: OlaPrediction, near?: LngLat): Place | null {
       const key = s.toLowerCase();
       if (!s || seen.has(key) || label.toLowerCase().startsWith(key) || /^india$/i.test(s)) return false;
       if (/^[\d\s/-]+[a-z]?$/i.test(s) || /^(st|rd|ln|road|street|marg)$/i.test(s) || /^(unit|shop|flat|plot|house)\b|^no\.?\s/i.test(s)) return false;
+      // Floors inside a building ("Second Floor-Mezzanine & Third Floor") and unit codes ("IBB-2", "F-55").
+      if (/\b(floor|flr|mezzanine|basement|level|lower ground|upper ground)\b/i.test(s) || (/\d/.test(s) && !/[a-z]/.test(s))) return false;
       seen.add(key);
       return true;
     })

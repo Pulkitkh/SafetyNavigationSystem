@@ -161,12 +161,26 @@ export function rankPlaces(places: Place[], query: string, near?: LngLat): Place
     .map((x) => x.p);
 }
 
-/** Same place reported twice (by both services, or as node and way): same name within 400 m (a mall or market can be pinned at different entrances). */
+// Names shared by many separate places; two of these a few hundred metres apart are different places.
+const GENERIC_NAME =
+  /^(police (station|chowki|post)|thana|bus (stop|stand)|atm|hospital|clinic|pharmacy|medical( store)?|chemist|petrol pump|fuel station|temple|mandir|mosque|masjid|church|gurudwara|school|park|garden|metro station|railway station|post office|bank|toilet|public toilet|parking)$/;
+
+function nameKey(label: string) {
+  return label.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+/**
+ * Same place reported twice (by several services, as node and way, or pinned at
+ * different entrances): the same name within 1.2 km, or 300 m for generic names
+ * like "Police station" that many separate places share.
+ */
 export function mergePlaces(lists: Place[][], limit = 10): Place[] {
   const out: Place[] = [];
   for (const list of lists) {
     for (const p of list) {
-      const dup = out.some((o) => o.label.toLowerCase() === p.label.toLowerCase() && haversine([o.lng, o.lat], [p.lng, p.lat]) < 400);
+      const key = nameKey(p.label);
+      const radius = GENERIC_NAME.test(key) ? 300 : 1200;
+      const dup = out.some((o) => nameKey(o.label) === key && haversine([o.lng, o.lat], [p.lng, p.lat]) < radius);
       if (!dup) out.push(p);
     }
   }

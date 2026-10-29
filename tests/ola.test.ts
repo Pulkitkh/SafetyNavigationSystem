@@ -33,6 +33,11 @@ describe("Ola Maps predictions", () => {
       geometry: { location: { lat: 17.36, lng: 78.47 } },
     });
     expect(q!.detail).toBe("Char Kaman, Hyderabad, Telangana");
+    const mall = olaToPlace({
+      structured_formatting: { main_text: "LuLu Mall", secondary_text: "Second Floor, Second Floor-Mezzanine & Third Floor, IBB-2, Amar Shaheed Path, Golf City, Lucknow" },
+      geometry: { location: { lat: 26.78, lng: 80.99 } },
+    });
+    expect(mall!.detail).toBe("Amar Shaheed Path, Golf City, Lucknow");
   });
 
   it("reads text-search-style results and drops ones without coordinates", () => {
