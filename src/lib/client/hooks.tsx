@@ -11,6 +11,8 @@ export interface Me {
   email: string;
   phone: string | null;
   autoSos: boolean;
+  /** Always-on location sharing with linked trusted contacts. */
+  shareLive: boolean;
 }
 
 interface SessionValue {

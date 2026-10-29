@@ -11,7 +11,11 @@ const statements = files.flatMap((f) => readFileSync(`drizzle/${f}`, "utf8").spl
 const out = [];
 const addColumns = [];
 for (const s of statements) {
-  if (s.startsWith("CREATE SCHEMA")) out.push(s.replace("CREATE SCHEMA", "CREATE SCHEMA IF NOT EXISTS"));
+  if (s.startsWith("CREATE SCHEMA")) {
+    // CREATE SCHEMA needs the database-wide CREATE right even with IF NOT EXISTS, so only run it when missing.
+    const name = s.match(/CREATE SCHEMA "([^"]+)"/)[1];
+    out.push(`DO $$ BEGIN\n  IF NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = '${name}') THEN CREATE SCHEMA "${name}"; END IF;\nEND $$;`);
+  }
   else if (s.startsWith("CREATE TABLE")) {
     out.push(s.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS"));
     const table = s.match(/^CREATE TABLE ("[^"]+"\."[^"]+")/)[1];

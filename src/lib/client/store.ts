@@ -13,6 +13,8 @@ export interface StoredContact {
   phone: string;
   relation: string;
   isPrimary: boolean;
+  /** Set once the contact linked their own SafeNav account from the invite. */
+  guardianUserId?: string | null;
   /** Devices that get this contact's SOS alerts automatically. */
   alerts?: { push: number; telegram: number; whatsapp?: number };
 }

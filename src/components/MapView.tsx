@@ -16,7 +16,7 @@ export interface MapRoute {
 export interface MapMarker {
   id: string;
   point: LngLat;
-  kind: "weak" | "report" | "police" | "hospital" | "dest" | "start" | "safe" | "place";
+  kind: "weak" | "report" | "police" | "hospital" | "dest" | "start" | "safe" | "place" | "person" | "sos";
   label?: string;
 }
 
@@ -61,6 +61,7 @@ const ICON = {
   start: '<circle cx="12" cy="12" r="4" fill="currentColor"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
   dot: '<circle cx="12" cy="12" r="3" fill="currentColor"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M5 21a7 7 0 0 1 14 0"/>',
 };
 
 const MARKER_STYLE: Record<MapMarker["kind"], { bg: string; icon: string }> = {
@@ -72,6 +73,8 @@ const MARKER_STYLE: Record<MapMarker["kind"], { bg: string; icon: string }> = {
   start: { bg: "#0f7a55", icon: ICON.start },
   safe: { bg: "#0f7a55", icon: ICON.check },
   place: { bg: "#6b6884", icon: ICON.dot },
+  person: { bg: "#5b3fd6", icon: ICON.user },
+  sos: { bg: "#e11d48", icon: ICON.alert },
 };
 
 const emptyFC = (): GeoJSON.FeatureCollection => ({ type: "FeatureCollection", features: [] });

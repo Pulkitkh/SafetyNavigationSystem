@@ -1,8 +1,9 @@
 "use client";
 
-import { BellOff, BellRing, Check, Copy, MessageCircle, MessageSquareText, MoreVertical, Phone, Plus, Send, Share2, Star, Trash2, UserPlus, Users } from "lucide-react";
+import { BellOff, BellRing, Check, Copy, MessageCircle, MessageSquareText, MoreVertical, Phone, Plus, Send, Share2, Smartphone, Star, Trash2, UserPlus, Users } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { ContactsTabs } from "@/components/ContactsTabs";
 import { PageHeader } from "@/components/Nav";
 import { initials } from "@/components/Sos";
 import { Badge, Callout, EmptyState, IconTile, Sheet } from "@/components/ui";
@@ -48,6 +49,7 @@ export default function ContactsPage() {
     return (
       <main id="main" className="mx-auto max-w-lg pb-nav">
         <PageHeader title="Trusted contacts" icon={<Users />} />
+        <ContactsTabs />
         <div className="space-y-2 px-4" aria-busy="true">
           {[0, 1].map((i) => (
             <div key={i} className="card h-24 animate-pulse" />
@@ -61,6 +63,7 @@ export default function ContactsPage() {
     return (
       <main id="main" className="mx-auto max-w-lg pb-nav">
         <PageHeader title="Trusted contacts" subtitle="The people alerted the moment you press SOS." icon={<Users />} />
+        <ContactsTabs />
         <div className="card mx-4">
           <EmptyState
             icon={Users}
@@ -148,6 +151,7 @@ export default function ContactsPage() {
           ) : undefined
         }
       />
+      <ContactsTabs />
       <div className="space-y-4 px-4">
         {error && <Callout tone="danger">{error}</Callout>}
         {welcome && contacts.length === 0 && (
@@ -187,6 +191,11 @@ export default function ContactsPage() {
                         {c.isPrimary && (
                           <Badge tone="brand" icon={Star}>
                             Primary
+                          </Badge>
+                        )}
+                        {c.guardianUserId && (
+                          <Badge tone="good" icon={Smartphone}>
+                            Uses SafeNav
                           </Badge>
                         )}
                       </p>

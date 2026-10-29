@@ -210,6 +210,55 @@ run("API end to end", () => {
     await ravi.call(`/api/trips/${sos.body.tripId}`, { method: "PATCH", json: { status: "ended", reason: "Marked safe" } });
   }, NETWORK_TIMEOUT);
 
+  it("lets a contact link their account, follow live sharing and answer an SOS", async () => {
+    // Priya adds Kiran; Kiran, signed in, accepts the invite.
+    const priya = new Client();
+    const kiran = new Client();
+    await priya.call("/api/auth/register", { method: "POST", json: { name: "Priya Nair", email: `priya-${unique}@example.com`, password: "correct horse", phone: "98222 11111" } });
+    await kiran.call("/api/auth/register", { method: "POST", json: { name: "Kiran Nair", email: `kiran-${unique}@example.com`, password: "correct horse" } });
+    const c = await priya.call("/api/contacts", { method: "POST", json: { name: "Kiran Nair", phone: "98222 33333", relation: "Brother" } });
+    const inv = await priya.call(`/api/contacts/${c.body.contact.id}/invite`, { method: "POST" });
+    const inviteToken = inv.body.url.split("/g/")[1];
+    expect((await priya.call(`/api/guardian/${inviteToken}/link`, { method: "POST" })).status).toBe(400); // own link
+    expect((await new Client().call(`/api/guardian/${inviteToken}/link`, { method: "POST" })).status).toBe(401);
+    const info = await kiran.call(`/api/guardian/${inviteToken}`);
+    expect(info.body.account).toMatchObject({ signedIn: true, isInviter: false, linkedToYou: false });
+    expect((await kiran.call(`/api/guardian/${inviteToken}/link`, { method: "POST" })).status).toBe(200);
+    expect((await kiran.call(`/api/guardian/${inviteToken}`)).body.account.linkedToYou).toBe(true);
+
+    // Not sharing: Kiran sees Priya, but no location.
+    let people = await kiran.call("/api/people");
+    expect(people.body.people).toHaveLength(1);
+    expect(people.body.people[0]).toMatchObject({ name: "Priya Nair", relation: "Brother", sharing: false, status: "idle", location: null });
+    const ignored = await priya.call("/api/me/location", { method: "POST", json: { lat: 22.7, lng: 75.8 } });
+    expect(ignored.body.sharing).toBe(false);
+
+    // Always-on sharing: location appears for Kiran, and nobody else can look.
+    expect((await priya.call("/api/auth/me", { method: "PATCH", json: { shareLive: true } })).body.user.shareLive).toBe(true);
+    await priya.call("/api/me/location", { method: "POST", json: { lat: 22.7201, lng: 75.8602, accuracy: 12, battery: 0.1 } });
+    people = await kiran.call("/api/people");
+    expect(people.body.people[0]).toMatchObject({ sharing: true, status: "sharing", location: { lat: 22.7201, lng: 75.8602, battery: 0.1, source: "live" } });
+    const priyaId = people.body.people[0].userId;
+    expect((await asha.call(`/api/people/${priyaId}`)).status).toBe(404);
+
+    // SOS: Kiran sees it, answers, and Priya's SOS screen shows the answer.
+    const t = token();
+    const sos = await priya.call("/api/sos", { method: "POST", json: { shareToken: t, lat: 22.7203, lng: 75.8604 } });
+    expect(sos.status).toBe(200);
+    const detail = await kiran.call(`/api/people/${priyaId}`);
+    expect(detail.body.person).toMatchObject({ status: "sos", trip: { status: "sos" } });
+    expect((await kiran.call(`/api/people/${priyaId}/respond`, { method: "POST", json: { response: "on_my_way" } })).status).toBe(200);
+    const status = await priya.call(`/api/sos/${sos.body.tripId}`);
+    expect(status.body.contacts.find((r: { contactId: string }) => r.contactId === c.body.contact.id)).toMatchObject({ response: "on_my_way" });
+    expect((await kiran.call("/api/people")).body.people[0].myResponse).toBe("on_my_way");
+
+    // Ending the SOS and unlinking.
+    await priya.call(`/api/trips/${sos.body.tripId}`, { method: "PATCH", json: { status: "ended", reason: "Marked safe" } });
+    expect((await kiran.call(`/api/people/${priyaId}/respond`, { method: "POST", json: { response: "calling" } })).status).toBe(409);
+    expect((await kiran.call(`/api/guardian/${inviteToken}/link`, { method: "DELETE" })).status).toBe(200);
+    expect((await kiran.call("/api/people")).body.people).toHaveLength(0);
+  }, NETWORK_TIMEOUT);
+
   it("reports upstream outages with a clear message instead of crashing", async () => {
     const plan = await asha.call("/api/routes/plan", { method: "POST", json: { from: route[0], to: route[2], mode: "walk" } });
     expect([200, 502]).toContain(plan.status);

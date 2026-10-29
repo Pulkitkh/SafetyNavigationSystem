@@ -8,7 +8,7 @@ export const SESSION_COOKIE = "safenav_session";
 const SESSION_DAYS = 30;
 
 export type User = typeof schema.users.$inferSelect;
-export type PublicUser = Pick<User, "id" | "name" | "email" | "phone" | "autoSos">;
+export type PublicUser = Pick<User, "id" | "name" | "email" | "phone" | "autoSos" | "shareLive">;
 
 export function sha256(value: string) {
   return createHash("sha256").update(value).digest("hex");
@@ -32,7 +32,7 @@ export function verifyPassword(password: string, hash: string) {
 }
 
 export function toPublicUser(u: User): PublicUser {
-  return { id: u.id, name: u.name, email: u.email, phone: u.phone, autoSos: u.autoSos };
+  return { id: u.id, name: u.name, email: u.email, phone: u.phone, autoSos: u.autoSos, shareLive: u.shareLive };
 }
 
 export async function createSession(userId: string) {

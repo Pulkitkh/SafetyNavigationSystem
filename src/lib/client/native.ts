@@ -108,6 +108,8 @@ interface SafeNavNativePlugin {
     countdownS?: number;
     autoSms?: boolean;
     tripId?: string;
+    /** Always-on sharing: the native service reports location with the app closed. */
+    shareLive?: boolean;
   }): Promise<NativeStatus>;
   setShakeGuard(o: { enabled: boolean }): Promise<NativeStatus>;
   takePendingSos(): Promise<{ sos: NativeSosOutcome | null }>;

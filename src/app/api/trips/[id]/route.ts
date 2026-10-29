@@ -36,6 +36,7 @@ export const PATCH = route(async (req: NextRequest, { params }: Ctx) => {
     await alertContacts(ids, {
       kind: "safe",
       tripId: id,
+      personUserId: user.id,
       title: `${user.name} is safe`,
       body: `${user.name} ended the SOS and marked themselves safe${input.reason && input.reason !== "Marked safe" ? ` (${input.reason})` : ""}. You may still want to call them.`,
       url: null,

@@ -5,7 +5,7 @@ import { mapsLink, sosMessage } from "@/lib/sos";
 import { VEHICLE_LABELS, type VehicleType } from "@/lib/phone";
 import { newId, sha256 } from "@/lib/server/auth";
 import { json, parseBody, rateLimit, requireUser, route } from "@/lib/server/http";
-import { alertContacts, type DeliveryResult } from "@/lib/server/alerts";
+import { alertContacts, repeatSosAlerts, type AlertPayload, type DeliveryResult } from "@/lib/server/alerts";
 import { smsProvider, type SmsResult } from "@/lib/server/sms";
 import { endOpenTrips, ownedTrip } from "@/lib/server/trips";
 import { shareUrl } from "@/lib/server/url";
@@ -84,24 +84,26 @@ export const POST = route(async (req: NextRequest) => {
   // app notifications and Telegram to linked contacts, and a paid SMS gateway if configured.
   const provider = smsProvider();
   const reason = TRIGGER_REASON[input.trigger];
+  const sosPayload: AlertPayload = {
+    kind: "sos",
+    tripId,
+    personUserId: user.id,
+    title: `SOS: ${user.name} needs help`,
+    body: [
+      reason ? `Automatic alert: ${reason}.` : `${user.name} pressed SOS.`,
+      vehicle ? `Vehicle: ${vehicle}.` : null,
+      hasLocation ? "Tap to see their live location, then call them. If you can't reach them, dial 112." : "Their location isn't available yet. Call them now; if you can't reach them, dial 112.",
+    ]
+      .filter(Boolean)
+      .join(" "),
+    url: liveUrl,
+    lat: input.lat,
+    lng: input.lng,
+  };
   const [alerts, results] = await Promise.all([
     alertContacts(
       contacts.map((c) => c.id),
-      {
-        kind: "sos",
-        tripId,
-        title: `SOS: ${user.name} needs help`,
-        body: [
-          reason ? `Automatic alert: ${reason}.` : `${user.name} pressed SOS.`,
-          vehicle ? `Vehicle: ${vehicle}.` : null,
-          hasLocation ? "Tap to see their live location, then call them. If you can't reach them, dial 112." : "Their location isn't available yet. Call them now; if you can't reach them, dial 112.",
-        ]
-          .filter(Boolean)
-          .join(" "),
-        url: liveUrl,
-        lat: input.lat,
-        lng: input.lng,
-      },
+      sosPayload,
     ).catch((err): DeliveryResult[] => {
       console.error(`[sos] alerts: ${(err as Error).message}`);
       return [];
@@ -126,6 +128,9 @@ export const POST = route(async (req: NextRequest) => {
       })),
     );
   }
+
+  // Keep ringing anyone who hasn't opened or answered it yet.
+  repeatSosAlerts(contacts.map((c) => c.id), sosPayload);
 
   // Per contact: the channels that reached them without the phone doing anything.
   const reach = contacts.map((c) => ({

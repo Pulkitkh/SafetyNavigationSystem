@@ -10,7 +10,7 @@ import { store } from "@/lib/client/store";
 const ITEMS: { href: string; label: string; icon: LucideIcon; match?: string[] }[] = [
   { href: "/", label: "Plan", icon: Navigation, match: ["/journey"] },
   { href: "/safety", label: "Safety", icon: ShieldCheck, match: ["/safety", "/area", "/timer", "/fake-call", "/report", "/account", "/app"] },
-  { href: "/contacts", label: "Contacts", icon: Users },
+  { href: "/contacts", label: "Contacts", icon: Users, match: ["/contacts", "/people"] },
   { href: "/help", label: "Help", icon: LifeBuoy },
 ];
 

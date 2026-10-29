@@ -1,6 +1,7 @@
 "use client";
 
-import { BellRing, Check, LoaderCircle, MapPin, MessageCircle, Phone, Send, ShieldCheck, Smartphone, SquarePlus, TriangleAlert } from "lucide-react";
+import { BellRing, Check, HeartHandshake, LoaderCircle, MapPin, MessageCircle, Phone, Send, ShieldCheck, Smartphone, SquarePlus, TriangleAlert } from "lucide-react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Callout, IconTile } from "@/components/ui";
@@ -11,6 +12,7 @@ interface Invite {
   vapidPublicKey: string | null;
   telegram: string | null;
   whatsapp: { number: string } | null;
+  account: { signedIn: boolean; isInviter: boolean; linkedToYou: boolean; linkedElsewhere: boolean };
   linked: { push: number; telegram: number; whatsapp?: number };
 }
 
@@ -44,6 +46,8 @@ export default function GuardianInvitePage() {
   const [pushError, setPushError] = useState<string | null>(null);
   const [test, setTest] = useState<"idle" | "sending" | "sent" | "failed">("idle");
   const [wa, setWa] = useState<"off" | "working" | "on" | "error">("off");
+  const [link, setLink] = useState<"idle" | "working" | "done">("idle");
+  const [linkError, setLinkError] = useState<string | null>(null);
   const [waError, setWaError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -100,6 +104,19 @@ export default function GuardianInvitePage() {
     } catch (e) {
       setPush("error");
       setPushError((e as Error).message);
+    }
+  };
+
+  const linkAccount = async () => {
+    setLink("working");
+    setLinkError(null);
+    try {
+      const res = await fetch(`/api/guardian/${encodeURIComponent(token)}/link`, { method: "POST" });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
+      setLink("done");
+    } catch (e) {
+      setLink("idle");
+      setLinkError((e as Error).message);
     }
   };
 
@@ -166,6 +183,48 @@ export default function GuardianInvitePage() {
           press SOS.
         </p>
       </div>
+
+      {!invite.account.isInviter && (
+        <section className="card rise rise-1 mt-4 overflow-hidden" aria-labelledby="app-title">
+          <div className="p-5">
+            <div className="flex items-start gap-3">
+              <IconTile icon={HeartHandshake} tone="brand" />
+              <div className="min-w-0">
+                <h2 id="app-title" className="text-lg font-extrabold text-ink">
+                  {invite.account.linkedToYou || link === "done" ? `${first} is in your People` : `Protect ${first} in the SafeNav app`}
+                </h2>
+                <p className="mt-0.5 text-sm text-ink-2">
+                  {invite.account.linkedToYou || link === "done"
+                    ? `Open People to see ${first}'s journeys, live location when they share it, and any SOS.`
+                    : "Free. Follow their journeys, see their live location when they share it, and get a loud alarm if they press SOS."}
+                </p>
+              </div>
+            </div>
+            {invite.account.linkedToYou || link === "done" ? (
+              <Link href="/people" className="btn btn-primary mt-4 w-full">
+                Open People
+              </Link>
+            ) : invite.account.linkedElsewhere ? (
+              <p className="mt-3 text-sm text-caution">Another SafeNav account is already linked for this contact. Ask {first} for a new invite link.</p>
+            ) : invite.account.signedIn ? (
+              <button onClick={() => void linkAccount()} disabled={link === "working"} className="btn btn-primary mt-4 w-full text-base">
+                {link === "working" ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden /> : <HeartHandshake className="h-5 w-5" aria-hidden />}
+                Add {first} to my People
+              </button>
+            ) : (
+              <div className="mt-4 grid gap-2">
+                <Link href={`/register?next=${encodeURIComponent(`/g/${token}`)}`} className="btn btn-primary w-full">
+                  Create a free account
+                </Link>
+                <Link href={`/login?next=${encodeURIComponent(`/g/${token}`)}`} className="btn btn-ghost w-full">
+                  I have an account
+                </Link>
+              </div>
+            )}
+            {linkError && <p className="mt-2 text-sm text-danger">{linkError}</p>}
+          </div>
+        </section>
+      )}
 
       <section className="card rise rise-1 mt-4 p-5" aria-labelledby="push-title">
         <div className="flex items-start gap-3">

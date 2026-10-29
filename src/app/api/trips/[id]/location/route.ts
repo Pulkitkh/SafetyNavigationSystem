@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { ApiError, json, parseBody, rateLimit, requireUser, route } from "@/lib/server/http";
+import { recordLive } from "@/lib/server/people";
 import { ownedTrip, pruneTripPoints } from "@/lib/server/trips";
 import { locationInput } from "@/lib/server/validation";
 
@@ -30,6 +31,8 @@ export const POST = route(async (req: NextRequest, { params }: Ctx) => {
         lastSeenAt: recordedAt,
       })
       .where(eq(schema.trips.id, id));
+    // Keep always-on sharing current during a journey too.
+    if (user.shareLive) await recordLive(user.id, { lat: input.lat, lng: input.lng, accuracy: input.accuracy, battery: input.battery, at: recordedAt });
   }
   if (Math.random() < 0.05) await pruneTripPoints(id);
   return json({ ok: true, status: trip.status });

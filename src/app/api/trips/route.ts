@@ -45,6 +45,7 @@ export const POST = route(async (req: NextRequest) => {
       {
         kind: "journey",
         tripId: trip.id,
+        personUserId: user.id,
         title: `${user.name} started a ${input.mode === "ride" ? "ride" : "walk"}`,
         body: `Going to ${input.destLabel}${vehicle ? ` in ${vehicle}` : ""}, expected by ${time}. Tap to follow live. You'll be alerted if anything looks wrong.`,
         url: shareUrl(req, input.shareToken),

@@ -2,7 +2,9 @@
 // change schema.ts, then run `npm run db:generate`.
 // Safe to run on every start; see the script for how it stays idempotent.
 export const MIGRATION_SQL = `
-CREATE SCHEMA IF NOT EXISTS "safenav";
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'safenav') THEN CREATE SCHEMA "safenav"; END IF;
+END $$;
 CREATE TABLE IF NOT EXISTS "safenav"."alert_deliveries" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"trip_id" text NOT NULL,

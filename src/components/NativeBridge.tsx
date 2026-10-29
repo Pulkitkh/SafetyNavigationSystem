@@ -32,6 +32,7 @@ export function NativeBridge() {
         countdownS: prefs.shakeCountdownS,
         autoSms: prefs.autoSms,
         tripId: store.journey()?.tripId ?? "",
+        shareLive: !!me?.shareLive,
       })
       .catch(() => {});
   }, [me, contacts, prefs.shakeCountdownS, prefs.autoSms, path]);

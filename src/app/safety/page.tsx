@@ -5,6 +5,7 @@ import Link from "next/link";
 import { DeviceSettings } from "@/components/DeviceSettings";
 import { PageHeader } from "@/components/Nav";
 import { useSafetyTimer } from "@/components/SafetyTimer";
+import { ShareLiveCard } from "@/components/ShareLiveCard";
 import { useSos } from "@/components/Sos";
 import { Badge, ListRow, ProgressRing, SectionTitle, type Tone } from "@/components/ui";
 import { useSession } from "@/lib/client/hooks";
@@ -88,6 +89,8 @@ export default function SafetyPage() {
             ))}
           </ul>
         </section>
+
+        <ShareLiveCard />
 
         <section id="drill" className="card scroll-mt-4 p-4" aria-labelledby="drill-title">
           <div className="flex items-start gap-3">

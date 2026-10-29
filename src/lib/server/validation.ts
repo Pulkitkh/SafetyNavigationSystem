@@ -31,6 +31,8 @@ export const updateMeInput = z.object({
   name: z.string().trim().min(2).max(60).optional(),
   phone: phone.optional().nullable(),
   autoSos: z.boolean().optional(),
+  // Always-on location sharing with linked trusted contacts.
+  shareLive: z.boolean().optional(),
 });
 
 export const RELATIONS = ["Mother", "Father", "Sister", "Brother", "Spouse", "Partner", "Friend", "Colleague", "Other"] as const;
@@ -150,3 +152,12 @@ export const unsubscribeInput = z.object({ endpoint: z.string().url().max(1000) 
 export const seenInput = z.object({ g: z.string().min(8).max(64) });
 
 export const inviteToken = z.string().regex(/^[A-Za-z0-9_-]{22,64}$/);
+
+/** A trusted contact's answer to an SOS. */
+export const sosResponseInput = z.object({ response: z.enum(["on_my_way", "calling", "called_112"]) });
+
+/** A SafeNav app install that should ring when someone you protect raises an SOS. */
+export const appDeviceInput = z.object({
+  token: z.string().min(20).max(4096),
+  platform: z.enum(["android", "ios"]),
+});

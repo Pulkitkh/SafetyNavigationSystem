@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
+import { GuardianWatch } from "@/components/GuardianWatch";
+import { LiveShare } from "@/components/LiveShare";
 import { BottomNav, JourneyPill } from "@/components/Nav";
 import { NativeBridge } from "@/components/NativeBridge";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorker";
@@ -49,6 +51,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <SafetyTimerWatch />
             <BottomNav />
             <NativeBridge />
+            <LiveShare />
+            <GuardianWatch />
           </SosProvider>
         </SessionProvider>
         <ServiceWorkerRegistration />

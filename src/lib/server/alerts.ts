@@ -14,9 +14,10 @@
  * Paid SMS gateways (sms.ts) and the phone's own SMS (native app) run alongside.
  */
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import webpush from "web-push";
 import { getDb, schema } from "@/lib/db";
+import { sendFcm } from "./fcm";
 
 export type AlertKind = "sos" | "safe" | "journey" | "test";
 
@@ -29,6 +30,8 @@ export interface AlertPayload {
   url: string | null;
   lat?: number | null;
   lng?: number | null;
+  /** The person the alert is about; the SafeNav app opens their page under People. */
+  personUserId?: string;
 }
 
 export interface DeliveryResult {
@@ -261,21 +264,69 @@ async function sendWhatsApp(device: typeof schema.guardianDevices.$inferSelect, 
 // ---------------------------------------------------------------- Fan-out
 
 /** Alerts every linked device of the given contacts in parallel and records each outcome. */
-export async function alertContacts(contactIds: string[], payload: AlertPayload, opts: { record?: boolean } = {}): Promise<DeliveryResult[]> {
+type Channel = DeliveryResult["channel"];
+
+/** Rings a SafeNav app install with a data message; the app shows the alert itself (full screen for SOS). */
+async function sendApp(token: string, p: AlertPayload) {
+  const base = process.env.APP_URL?.replace(/\/+$/, "") ?? "";
+  return sendFcm(token, {
+    kind: p.kind,
+    title: p.title,
+    body: p.body,
+    tripId: p.tripId,
+    url: p.personUserId ? `${base}/people/${p.personUserId}` : (p.url ?? base),
+    ...(p.personUserId ? { personUserId: p.personUserId } : {}),
+    ...(p.lat != null && p.lng != null ? { lat: String(p.lat), lng: String(p.lng) } : {}),
+  });
+}
+
+/**
+ * Alerts every linked device of the given contacts in parallel and records each
+ * outcome. Contacts who linked their SafeNav account also get their app rung.
+ */
+export async function alertContacts(
+  contactIds: string[],
+  payload: AlertPayload,
+  opts: { record?: boolean; channels?: Channel[] } = {},
+): Promise<DeliveryResult[]> {
   if (!contactIds.length) return [];
   const db = await getDb();
-  const devices = await db.select().from(schema.guardianDevices).where(inArray(schema.guardianDevices.contactId, contactIds));
-  if (!devices.length) return [];
+  const wanted = (c: Channel) => !opts.channels || opts.channels.includes(c);
+  const devices = (await db.select().from(schema.guardianDevices).where(inArray(schema.guardianDevices.contactId, contactIds))).filter((d) => wanted(d.kind));
+  const linked = wanted("fcm")
+    ? await db
+        .select({ contactId: schema.contacts.id, userId: schema.contacts.guardianUserId })
+        .from(schema.contacts)
+        .where(and(inArray(schema.contacts.id, contactIds), isNotNull(schema.contacts.guardianUserId)))
+    : [];
+  const apps = linked.length
+    ? await db
+        .select()
+        .from(schema.appDevices)
+        .where(inArray(schema.appDevices.userId, linked.map((l) => l.userId!)))
+    : [];
+  if (!devices.length && !apps.length) return [];
 
-  const results = await Promise.all(
-    devices.map(async (d) => {
-      const r = d.kind === "push" ? await sendPush(d, payload) : d.kind === "whatsapp" ? await sendWhatsApp(d, payload) : await sendTelegram(d, payload);
-      return { device: d, ...r };
-    }),
-  );
+  const [results, appResults] = await Promise.all([
+    Promise.all(
+      devices.map(async (d) => {
+        const r = d.kind === "push" ? await sendPush(d, payload) : d.kind === "whatsapp" ? await sendWhatsApp(d, payload) : await sendTelegram(d, payload);
+        return { device: d, ...r };
+      }),
+    ),
+    Promise.all(
+      apps.flatMap((a) =>
+        linked
+          .filter((l) => l.userId === a.userId)
+          .map(async (l) => ({ app: a, contactId: l.contactId, deviceId: `app:${createHash("sha256").update(a.token).digest("hex").slice(0, 16)}`, ...(await sendApp(a.token, payload)) })),
+      ),
+    ),
+  ]);
 
   const gone = results.filter((r) => r.gone).map((r) => r.device.id);
   if (gone.length) await db.delete(schema.guardianDevices).where(inArray(schema.guardianDevices.id, gone));
+  const goneApps = appResults.filter((r) => r.gone).map((r) => r.app.token);
+  if (goneApps.length) await db.delete(schema.appDevices).where(inArray(schema.appDevices.token, goneApps));
   const failed = results.filter((r) => !r.ok && !r.gone).map((r) => r.device.id);
   if (failed.length) {
     await db
@@ -286,18 +337,63 @@ export async function alertContacts(contactIds: string[], payload: AlertPayload,
   const okIds = results.filter((r) => r.ok).map((r) => r.device.id);
   if (okIds.length) await db.update(schema.guardianDevices).set({ failures: 0 }).where(inArray(schema.guardianDevices.id, okIds));
 
-  if (opts.record !== false) await db.insert(schema.alertDeliveries).values(
-    results.map((r) => ({
-      tripId: payload.tripId,
-      contactId: r.device.contactId,
-      deviceId: r.device.id,
-      kind: payload.kind,
-      channel: r.device.kind,
-      ok: r.ok,
-      error: r.error?.slice(0, 200) ?? null,
-    })),
-  );
-  return results.map((r) => ({ contactId: r.device.contactId, deviceId: r.device.id, channel: r.device.kind, ok: r.ok, error: r.error }));
+  const all: DeliveryResult[] = [
+    ...results.map((r) => ({ contactId: r.device.contactId, deviceId: r.device.id, channel: r.device.kind, ok: r.ok, error: r.error })),
+    ...appResults.map((r) => ({ contactId: r.contactId, deviceId: r.deviceId, channel: "fcm" as const, ok: r.ok, error: r.error })),
+  ];
+  if (opts.record !== false && all.length) {
+    await db.insert(schema.alertDeliveries).values(
+      all.map((r) => ({
+        tripId: payload.tripId,
+        contactId: r.contactId,
+        deviceId: r.deviceId,
+        kind: payload.kind,
+        channel: r.channel,
+        ok: r.ok,
+        error: r.error?.slice(0, 200) ?? null,
+      })),
+    );
+  }
+  return all;
+}
+
+/** Re-alert schedule for an SOS nobody has opened yet (seconds after the first alert). */
+export const REALERT_AFTER_S = [45, 90, 180];
+
+/**
+ * Keeps ringing contacts who haven't opened the SOS or answered it, while it
+ * is still open. Only free channels repeat (app ring and browser push), never
+ * paid WhatsApp messages. Runs in this server process; a restart drops pending
+ * repeats, which is acceptable because the first alert already went out.
+ */
+export function repeatSosAlerts(contactIds: string[], payload: AlertPayload, schedule = REALERT_AFTER_S) {
+  for (const s of schedule) {
+    const t = setTimeout(() => {
+      void (async () => {
+        const db = await getDb();
+        const trip = await db.query.trips.findFirst({ where: eq(schema.trips.id, payload.tripId), columns: { status: true } });
+        if (trip?.status !== "sos") return;
+        const seen = await db
+          .selectDistinct({ contactId: schema.alertDeliveries.contactId })
+          .from(schema.alertDeliveries)
+          .where(and(eq(schema.alertDeliveries.tripId, payload.tripId), isNotNull(schema.alertDeliveries.seenAt)));
+        const answered = await db.select({ contactId: schema.sosResponses.contactId }).from(schema.sosResponses).where(eq(schema.sosResponses.tripId, payload.tripId));
+        const done = new Set([...seen.map((r) => r.contactId), ...answered.map((r) => r.contactId)]);
+        const pending = contactIds.filter((c) => !done.has(c));
+        if (pending.length) await alertContacts(pending, { ...payload, body: `Still no answer. ${payload.body}` }, { record: false, channels: ["push", "fcm"] });
+      })().catch((err) => console.error(`[alerts] repeat: ${(err as Error).message}`));
+    }, s * 1000);
+    t.unref?.();
+  }
+}
+
+/** Marks every alert to a contact for this trip as seen, e.g. when they open it in the app. */
+export async function markSeenByContact(tripId: string, contactId: string) {
+  const db = await getDb();
+  await db
+    .update(schema.alertDeliveries)
+    .set({ seenAt: new Date() })
+    .where(and(eq(schema.alertDeliveries.tripId, tripId), eq(schema.alertDeliveries.contactId, contactId), sql`${schema.alertDeliveries.seenAt} IS NULL`));
 }
 
 /** Marks alerts for a trip as seen by the device that opened its link. */

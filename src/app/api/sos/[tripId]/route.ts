@@ -11,6 +11,8 @@ export interface ContactReach {
   delivered: string[];
   failed: string[];
   seenAt: string | null;
+  /** Their answer from the SafeNav app: on_my_way | calling | called_112. */
+  response: string | null;
 }
 
 /** Who has been reached about this SOS, over which channels, and who has opened the live link. */
@@ -23,9 +25,15 @@ export const GET = route(async (_req: NextRequest, { params }: Ctx) => {
   const byContact = new Map<string, ContactReach>();
   for (const r of rows) {
     if (!r.contactId || r.kind !== "sos") continue;
-    const c = byContact.get(r.contactId) ?? { contactId: r.contactId, delivered: [], failed: [], seenAt: null };
+    const c = byContact.get(r.contactId) ?? { contactId: r.contactId, delivered: [], failed: [], seenAt: null, response: null };
     (r.ok ? c.delivered : c.failed).push(r.channel);
     if (r.seenAt && (!c.seenAt || r.seenAt.toISOString() < c.seenAt)) c.seenAt = r.seenAt.toISOString();
+    byContact.set(r.contactId, c);
+  }
+  const responses = await db.select().from(schema.sosResponses).where(eq(schema.sosResponses.tripId, tripId));
+  for (const r of responses) {
+    const c = byContact.get(r.contactId) ?? { contactId: r.contactId, delivered: [], failed: [], seenAt: null, response: null };
+    c.response = r.response;
     byContact.set(r.contactId, c);
   }
   return json({ contacts: [...byContact.values()] });

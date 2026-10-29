@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/Nav";
+import { ShareLiveCard } from "@/components/ShareLiveCard";
 import { initials } from "@/components/Sos";
 import { Callout, EmptyState, ListRow, Toggle } from "@/components/ui";
 import { api } from "@/lib/client/api";
@@ -110,6 +111,8 @@ export default function AccountPage() {
           </button>
           {msg && <Callout tone={msg.ok ? "good" : "danger"}>{msg.text}</Callout>}
         </form>
+
+        <ShareLiveCard />
 
         <div className="card overflow-hidden">
           <Toggle

@@ -11,12 +11,14 @@ import { store, type StoredContact } from "@/lib/client/store";
 import { detectPlatform, EMERGENCY_NUMBERS, mapsLink, smsUri, sosMessage, whatsappUri } from "@/lib/sos";
 
 type Trigger = "manual" | "missed_checkin" | "deviation";
-type Channel = "sms_device" | "push" | "telegram" | "whatsapp" | "sms_gateway";
+type Channel = "sms_device" | "push" | "telegram" | "whatsapp" | "fcm" | "sms_gateway";
 
 interface Reach {
   delivered: Channel[];
   failed: Channel[];
   seenAt: string | null;
+  /** The contact's answer from the SafeNav app. */
+  response?: string | null;
 }
 
 interface SosState {
@@ -69,6 +71,7 @@ const CHANNEL_LABEL: Record<Channel, string> = {
   push: "App alert",
   telegram: "Telegram",
   whatsapp: "WhatsApp",
+  fcm: "SafeNav app",
 };
 
 function addReach(map: Record<string, Reach>, id: string, channel: Channel, ok: boolean): Record<string, Reach> {
@@ -196,7 +199,7 @@ export function SosProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!sos?.tripId || sos.server !== "ok") return;
     const load = () =>
-      api<{ contacts: { contactId: string; delivered: Channel[]; failed: Channel[]; seenAt: string | null }[] }>(`/api/sos/${sos.tripId}`)
+      api<{ contacts: { contactId: string; delivered: Channel[]; failed: Channel[]; seenAt: string | null; response: string | null }[] }>(`/api/sos/${sos.tripId}`)
         .then(({ contacts: rows }) =>
           setSos((s) => {
             if (!s) return s;
@@ -207,6 +210,7 @@ export function SosProvider({ children }: { children: ReactNode }) {
                 delivered: [...new Set([...cur.delivered, ...r.delivered])],
                 failed: [...new Set([...cur.failed, ...r.failed])].filter((c) => !r.delivered.includes(c)),
                 seenAt: r.seenAt ?? cur.seenAt,
+                response: r.response ?? cur.response ?? null,
               };
             }
             return { ...s, reach };
@@ -521,6 +525,11 @@ function ContactReachRow({ contact, reach, pending, drill, now }: { contact: Sto
         <p className="text-sm text-white/85">
           {drill ? (
             "Would be alerted with your live location"
+          ) : reach?.response ? (
+            <span className="inline-flex items-center gap-1 font-extrabold text-emerald-200">
+              <Check className="h-4 w-4" strokeWidth={3} aria-hidden />
+              {reach.response === "on_my_way" ? "On the way to you" : reach.response === "calling" ? "Calling you" : "Called 112 for you"}
+            </span>
           ) : reach?.seenAt ? (
             <span className="inline-flex items-center gap-1 font-semibold text-emerald-200">
               <Eye className="h-3.5 w-3.5" aria-hidden />
@@ -569,7 +578,7 @@ export function initials(name: string) {
 }
 
 /** Loud two-tone alarm through Web Audio; works without any audio file. */
-function useSiren(on: boolean) {
+export function useSiren(on: boolean) {
   useEffect(() => {
     if (!on) return;
     const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
