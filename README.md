@@ -42,7 +42,7 @@ Known limit: browsers pause location when the screen is locked or the app is in 
 | Full search, reverse geocoding | [Nominatim](https://nominatim.org) | Explicit searches (Enter / "Search all places"), names for map taps and links. Throttled to 1 request per second, never used for autocomplete, per its policy |
 | Extra place search (optional) | [Ola Maps](https://maps.olakrutrim.com) Places autocomplete | Indian shops, buildings and addresses missing from OpenStreetMap. Used only when `OLA_MAPS_API_KEY` is set, with a daily cap (`OLA_MAPS_DAILY_LIMIT`, default 3000) |
 | Plus codes | [Open Location Code](https://github.com/google/open-location-code) (decoded locally) | Codes copied from Google Maps |
-| Hourly forecast: rain, thunderstorms, visibility | [Open-Meteo](https://open-meteo.com) | Fewer people out in rain, fog dims lighting, flooded underpasses |
+| Hourly forecast: rain, thunderstorms, visibility | [Open-Meteo](https://open-meteo.com), with [MET Norway](https://api.met.no) as the fallback when Open-Meteo rate-limits shared cloud IPs | Fewer people out in rain, fog dims lighting, flooded underpasses |
 | Sunrise, sunset, twilight | [SunCalc](https://github.com/mourner/suncalc) (computed locally) | Day/night weighting |
 | Opening hours evaluation | [opening_hours.js](https://github.com/opening-hours/opening_hours.js) | Whether a shop is open when you pass |
 | Map tiles | [OpenFreeMap](https://openfreemap.org) | Base map |

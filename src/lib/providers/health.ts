@@ -38,6 +38,7 @@ export async function checkUpstreams(): Promise<ProbeResult[]> {
   probes.push(probe("street data (map tiles)", process.env.TILES_TILEJSON_URL || "https://tiles.openfreemap.org/planet"));
   probes.push(probe("place search (Photon)", `${process.env.PHOTON_URL || "https://photon.komoot.io"}/api/?q=delhi&limit=1`));
   probes.push(probe("reverse geocoding (Nominatim)", `${process.env.NOMINATIM_URL || "https://nominatim.openstreetmap.org"}/status?format=json`));
+  probes.push(probe("weather fallback (MET Norway)", `${process.env.MET_NORWAY_URL || "https://api.met.no/weatherapi/locationforecast/2.0"}/status`));
   probes.push(probe("weather (Open-Meteo)", `${process.env.OPEN_METEO_URL || "https://api.open-meteo.com"}/v1/forecast?latitude=28.6&longitude=77.2&hourly=visibility&forecast_days=1`));
   return Promise.all(probes);
 }

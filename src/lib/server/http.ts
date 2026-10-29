@@ -78,8 +78,24 @@ export function assertSameOrigin(req: NextRequest) {
 // shared public data services; put a CDN rule in front for hard limits.
 const buckets = new Map<string, { count: number; resetAt: number }>();
 
+/**
+ * The caller's address for rate limiting. Headers a client can set itself must
+ * not be trusted: Cloudflare (in front of Render) overwrites CF-Connecting-IP,
+ * so it comes first. Without it, the last X-Forwarded-For hop is the one added
+ * by the nearest proxy; the first is whatever the client sent.
+ */
+export function clientIp(headers: Headers): string {
+  const trusted = headers.get("cf-connecting-ip") || headers.get("true-client-ip") || headers.get("x-real-ip");
+  if (trusted?.trim()) return trusted.trim();
+  const hops = (headers.get("x-forwarded-for") ?? "")
+    .split(",")
+    .map((h) => h.trim())
+    .filter(Boolean);
+  return hops.at(-1) || "local";
+}
+
 export function rateLimit(req: NextRequest, name: string, limit: number, windowMs: number) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "local";
+  const ip = clientIp(req.headers);
   const key = `${name}:${ip}`;
   const now = Date.now();
   const b = buckets.get(key);
