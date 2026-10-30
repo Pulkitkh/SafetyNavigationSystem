@@ -2,7 +2,7 @@
  * "Is it safe here right now?": the same factors and weights as route scoring,
  * applied to the streets within ~150 m of one point at the current moment.
  */
-import { distanceToBBox, haversine, resample, type LngLat } from "@/lib/geo";
+import { haversine, resample, type LngLat } from "@/lib/geo";
 import type { Poi, PoiKind } from "@/lib/providers/overpass";
 import { isDark, lightPeriod, type LightPeriod } from "@/lib/time";
 import { FACTORS, type Factor } from "./factors";
@@ -114,7 +114,7 @@ export function scoreArea(point: LngLat, index: FeatureIndex, ctx: AreaContext):
 
   const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
   const lights = samples.map((s) => {
-    const lamps = index.pois.near(s.point, 35).filter((n) => n.item.kind === "lamp").length;
+    const lamps = index.lamps.near(s.point, 35).length;
     const l = lightingScore(s.tags.highway ? s.tags : undefined, lamps);
     return { ...l, score: ctx.foggy && period !== "day" ? Math.round(l.score * 0.8) : l.score };
   });
@@ -159,7 +159,7 @@ export function scoreArea(point: LngLat, index: FeatureIndex, ctx: AreaContext):
 
   // Buildings alongside the streets: judged only where buildings are mapped around this spot.
   const buildingsMapped = index.buildings.near(point, 200).length >= 10;
-  const alongside = samples.filter((s) => index.buildings.near(s.point, 150).some(({ item }) => distanceToBBox(s.point, item) <= FRONTAGE_M)).length;
+  const alongside = samples.filter((s) => index.buildingWithin(s.point, FRONTAGE_M)).length;
 
   let reportTotal = 0;
   let reports = 0;

@@ -31,7 +31,13 @@ const MAX_CELLS = Number(process.env.OSM_MAX_CELLS) || 2500;
 /** Overpass asks for no more than two parallel queries per client. */
 const FETCH_CONCURRENCY = 2;
 /** After a cell fails to download, wait this long before trying it again. */
-const FAILED_RETRY_MS = 10 * 60_000;
+const FAILED_RETRY_MS = 3 * 60_000;
+/**
+ * A cell refused only because every Overpass mirror is cooling down (one slow
+ * answer opens the circuit breaker for all requests) is retried in the
+ * background once the cool-down is over, rather than waiting for the next visitor.
+ */
+const BREAKER_RETRY_MS = 75_000;
 
 export type Layer = "full" | "help";
 
@@ -263,6 +269,7 @@ const memory = new Map<string, { f: OsmFeatures; fetchedAt: number }>();
 const MEMORY_CELLS = 48;
 const inflight = new Map<string, Promise<OsmFeatures>>();
 const failedUntil = new Map<string, number>();
+const retries = new Map<string, number>();
 let active = 0;
 const waiting: (() => void)[] = [];
 
@@ -270,6 +277,7 @@ export function resetCellsForTests() {
   memory.clear();
   inflight.clear();
   failedUntil.clear();
+  retries.clear();
   active = 0;
   waiting.length = 0;
 }
@@ -308,13 +316,20 @@ function download(layer: Layer, c: CellRef): Promise<OsmFeatures> {
       const db = await getDb();
       const row = { data: packed, bytes: packed.length, fetchedAt: new Date(now), usedAt: new Date(now) };
       await db.insert(schema.osmCells).values({ key, ...row }).onConflictDoUpdate({ target: schema.osmCells.key, set: row });
-      if (Math.random() < 0.05) void evict();
+      if (Math.random() < 0.05) void evict().catch((err) => console.warn(`[cells] clean-up failed: ${(err as Error).message}`));
     } catch (err) {
       console.warn(`[cells] could not store ${key}: ${(err as Error).message}`);
     }
     return f;
   }).finally(() => inflight.delete(key));
-  p.catch(() => failedUntil.set(key, Date.now() + FAILED_RETRY_MS));
+  p.catch((err: Error) => {
+    const breaker = /failed recently/.test(err.message);
+    failedUntil.set(key, Date.now() + (breaker ? BREAKER_RETRY_MS - 5_000 : FAILED_RETRY_MS));
+    const tries = (retries.get(key) ?? 0) + 1;
+    retries.set(key, tries);
+    if (breaker && tries <= 4) setTimeout(() => void download(layer, c).catch(() => {}), BREAKER_RETRY_MS * tries).unref?.();
+  });
+  p.then(() => retries.delete(key), () => {});
   inflight.set(key, p);
   return p;
 }

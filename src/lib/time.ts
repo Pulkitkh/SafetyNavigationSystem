@@ -17,7 +17,21 @@ interface WallParts {
 
 const formatters = new Map<string, Intl.DateTimeFormat>();
 
+/** Wall-clock parts are asked for again and again for the same minute while scoring; keep recent ones. */
+const partsCache = new Map<string, WallParts>();
+
 export function wallParts(date: Date, tz: string): WallParts {
+  const minute = Math.floor(date.getTime() / 60_000);
+  const key = `${tz}:${minute}`;
+  const hit = partsCache.get(key);
+  if (hit) return hit;
+  const parts = computeWallParts(new Date(minute * 60_000), tz);
+  if (partsCache.size > 2000) partsCache.clear();
+  partsCache.set(key, parts);
+  return parts;
+}
+
+function computeWallParts(date: Date, tz: string): WallParts {
   let f = formatters.get(tz);
   if (!f) {
     f = new Intl.DateTimeFormat("en-US", {

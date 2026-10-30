@@ -149,6 +149,13 @@ export class FeatureIndex {
   readonly reports = new GridIndex<CommunityReport>(120);
   readonly buildings = new GridIndex<BBox>(60);
   readonly places = new GridIndex<Place>(400);
+  /** Street lamps only, so lighting lookups don't scan every shop. */
+  readonly lamps = new GridIndex<Poi>(60);
+  /** Police and places to wait for help, which are looked up up to 2 km away. */
+  readonly helpPois = new GridIndex<Poi>(400);
+  /** Buildings up to 60 m across, by centre, and larger ones (malls, colonnades) separately. */
+  private readonly smallBuildings = new GridIndex<BBox>(50);
+  private readonly bigBuildings = new GridIndex<BBox>(200);
   readonly buildingCount: number;
   readonly source: "overpass" | "tiles";
   readonly areas: { area: Area; bbox: BBox }[];
@@ -175,7 +182,11 @@ export class FeatureIndex {
         }
       }
     }
-    for (const poi of features.pois) this.pois.insert(poi.point, poi);
+    for (const poi of features.pois) {
+      this.pois.insert(poi.point, poi);
+      if (poi.kind === "lamp") this.lamps.insert(poi.point, poi);
+      if (poi.kind === "police" || HAVEN_KINDS.has(poi.kind)) this.helpPois.insert(poi.point, poi);
+    }
     for (const r of reports) this.reports.insert(r.point, r);
     // Index each footprint at its corners and centre so large blocks are found from any side.
     for (const b of features.buildings ?? []) {
@@ -187,6 +198,8 @@ export class FeatureIndex {
         [b.maxLng, b.maxLat],
       ];
       for (const p of pts) this.buildings.insert(p, b);
+      if (haversine([b.minLng, b.minLat], [b.maxLng, b.maxLat]) <= 60) this.smallBuildings.insert(pts[0], b);
+      else for (const p of pts) this.bigBuildings.insert(p, b);
     }
     this.buildingCount = features.buildings?.length ?? 0;
     this.source = features.source ?? "overpass";
@@ -205,6 +218,13 @@ export class FeatureIndex {
     const activityPois = features.pois.filter((p) => ACTIVITY_WEIGHT[p.kind] != null && p.kind !== "transit").length;
     const roadKm = features.roads.reduce((a, r) => a + (r.geometry.length > 1 ? haversine(r.geometry[0], r.geometry.at(-1)!) : 0), 0) / 1000;
     this.placesSparse = (this.buildingCount >= 300 && activityPois / this.buildingCount < 0.004) || (activityPois < 3 && roadKm > 5);
+  }
+
+  /** Whether a building outline lies within `m` metres of `p` (a home or shop facing the street). */
+  buildingWithin(p: LngLat, m = FRONTAGE_M): boolean {
+    const close = (b: BBox) => distanceToBBox(p, b) <= m;
+    // A small building's centre is at most 30 m from its outline; a big one's corners at most ~250 m away along a side.
+    return this.smallBuildings.some(p, m + 31, close) || this.bigBuildings.some(p, m + 250, close);
   }
 
   /** Whether `p` lies in a part filled from vector tiles. */
@@ -585,8 +605,7 @@ export class StretchEvaluator {
   sample(point: LngLat, road?: Road | null): SampleFacts {
     const matched = road === undefined ? (this.index.nearestRoad(point, 20) ?? this.index.nearestRoad(point, 35))?.road ?? null : road;
     const tags = matched?.tags;
-    let lamps = 0;
-    for (const n of this.index.pois.near(point, 35)) if (n.item.kind === "lamp") lamps++;
+    const lamps = this.index.lamps.near(point, 35).length;
     const walk = walkpathScore(tags, this.dark, { stepFree: this.ctx.stepFree, heavyRain: this.ctx.heavyRain });
     const light = lightingScore(tags, lamps);
     // Fog scatters street light and hides people from view; lighting counts for less.
@@ -610,7 +629,7 @@ export class StretchEvaluator {
     if (hit) return hit;
     let policeM: number | null = null;
     let havenM: number | null = null;
-    for (const { item, distance } of this.index.pois.near(center, 2000)) {
+    for (const { item, distance } of this.index.helpPois.near(center, 2000)) {
       if (item.kind === "police" && (policeM == null || distance < policeM)) policeM = distance;
       if (HAVEN_KINDS.has(item.kind) && distance <= 1000 && (havenM == null || distance < havenM)) {
         if (openProbability(this.index, item, when, this.ctx.tz).p >= 0.5) havenM = distance;
@@ -636,7 +655,7 @@ export class StretchEvaluator {
         if (distance <= PLACES_RADIUS_M && ACTIVITY_WEIGHT[item.kind] != null) nearby.set(item.id, item);
       }
       for (const { item } of index.reports.near(f.point, 60)) reports.set(item.id, item);
-      if (this.buildingsMapped && index.buildings.some(f.point, 150, (b) => distanceToBBox(f.point, b) <= FRONTAGE_M)) frontageSamples++;
+      if (this.buildingsMapped && index.buildingWithin(f.point)) frontageSamples++;
     }
 
     let weightedOpen = 0;
@@ -747,7 +766,7 @@ export function buildingsMappedAlong(index: FeatureIndex, points: LngLat[], leng
     const p = points[i];
     for (const { item } of index.buildings.near(p, 150)) near.add(item);
     checked++;
-    if (index.buildings.some(p, 150, (b) => distanceToBBox(p, b) <= FRONTAGE_M)) alongside++;
+    if (index.buildingWithin(p)) alongside++;
   }
   // Mapped if buildings are reasonably dense, or a few large ones (a mall, a colonnade) line much of the way.
   return lengthM > 0 && (near.size / Math.max(0.2, lengthM / 1000) >= MIN_BUILDINGS_PER_KM || (checked > 0 && alongside / checked >= 0.2));

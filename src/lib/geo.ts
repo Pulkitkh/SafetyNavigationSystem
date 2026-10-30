@@ -214,40 +214,53 @@ export class GridIndex<T> {
 
   /** Whether any item within `radiusM` of `p` passes `pred`; stops at the first one. */
   some(p: LngLat, radiusM: number, pred: (item: T, distance: number) => boolean): boolean {
+    const kx = 111_320 * Math.max(0.1, Math.cos(toRad(p[1])));
     const latSpan = Math.ceil(radiusM / 111_320 / this.cellDeg);
-    const lngSpan = Math.ceil(radiusM / (111_320 * Math.max(0.1, Math.cos(toRad(p[1])))) / this.cellDeg);
+    const lngSpan = Math.ceil(radiusM / kx / this.cellDeg);
     const cx = Math.floor(p[0] / this.cellDeg);
     const cy = Math.floor(p[1] / this.cellDeg);
+    const r2 = radiusM * radiusM;
     for (let x = cx - lngSpan; x <= cx + lngSpan; x++) {
       for (let y = cy - latSpan; y <= cy + latSpan; y++) {
         const list = this.cells.get(`${x}:${y}`);
         if (!list) continue;
         for (const e of list) {
-          const d = haversine(p, e.p);
-          if (d <= radiusM && pred(e.item, d)) return true;
+          const dx = (e.p[0] - p[0]) * kx;
+          const dy = (e.p[1] - p[1]) * 111_320;
+          const d2 = dx * dx + dy * dy;
+          if (d2 <= r2 && pred(e.item, Math.sqrt(d2))) return true;
         }
       }
     }
     return false;
   }
 
-  /** Items within `radiusM` of `p`, with their distances. */
+  /**
+   * Items within `radiusM` of `p`, with their distances. Distances use a flat
+   * projection around `p`: within a few kilometres it matches the great-circle
+   * distance to well under a metre and is much cheaper.
+   */
   near(p: LngLat, radiusM: number): { item: T; distance: number }[] {
+    const kx = 111_320 * Math.max(0.1, Math.cos(toRad(p[1])));
     const latSpan = Math.ceil(radiusM / 111_320 / this.cellDeg);
-    const lngSpan = Math.ceil(radiusM / (111_320 * Math.max(0.1, Math.cos(toRad(p[1])))) / this.cellDeg);
+    const lngSpan = Math.ceil(radiusM / kx / this.cellDeg);
     const cx = Math.floor(p[0] / this.cellDeg);
     const cy = Math.floor(p[1] / this.cellDeg);
+    const r2 = radiusM * radiusM;
     const out: { item: T; distance: number }[] = [];
     for (let x = cx - lngSpan; x <= cx + lngSpan; x++) {
       for (let y = cy - latSpan; y <= cy + latSpan; y++) {
         const list = this.cells.get(`${x}:${y}`);
         if (!list) continue;
         for (const e of list) {
-          const d = haversine(p, e.p);
-          if (d <= radiusM) out.push({ item: e.item, distance: d });
+          const dx = (e.p[0] - p[0]) * kx;
+          const dy = (e.p[1] - p[1]) * 111_320;
+          const d2 = dx * dx + dy * dy;
+          if (d2 <= r2) out.push({ item: e.item, distance: Math.sqrt(d2) });
         }
       }
     }
     return out;
   }
+
 }
