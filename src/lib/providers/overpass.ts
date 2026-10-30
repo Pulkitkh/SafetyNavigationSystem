@@ -340,8 +340,13 @@ export function parseOverpass(elements: OverpassElement[]): OsmFeatures {
   return { roads, pois, areas, buildings };
 }
 
-/** Public Overpass instances listed on the OSM wiki; OVERPASS_URL (comma-separated) overrides them. */
+/**
+ * Public Overpass instances listed on the OSM wiki; OVERPASS_URL (comma-separated)
+ * overrides them. OpenStreetMap France's instance comes first: it answers cloud
+ * servers, while the main instance often turns them away when at capacity.
+ */
 export const OVERPASS_MIRRORS = [
+  "https://overpass.openstreetmap.fr/api/interpreter",
   "https://overpass-api.de/api/interpreter",
   "https://overpass.private.coffee/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
