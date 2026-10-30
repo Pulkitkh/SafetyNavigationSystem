@@ -31,7 +31,8 @@ function PointerRow({ p, tone }: { p: Pointer; tone: "danger" | "good" }) {
       <div className="min-w-0 flex-1">
         <p className="break-words font-bold leading-snug text-ink">{p.name}</p>
         <p className="text-[13px] text-ink-2">
-          {p.direction === "here" ? "Right here" : `${formatDistance(p.distance)} ${p.direction}`} · {p.when === "after dark" ? "after dark" : "now"} · scores {p.score}
+          {p.named ? `${p.direction === "here" ? "Right here" : `${formatDistance(p.distance)} ${p.direction}`} · ` : ""}
+          {p.when === "after dark" ? "after dark" : "now"} · scores {p.score}
         </p>
         {p.reasons.length > 0 && <p className="mt-0.5 text-[13px] text-ink-2">{p.reasons.join("; ")}</p>}
       </div>

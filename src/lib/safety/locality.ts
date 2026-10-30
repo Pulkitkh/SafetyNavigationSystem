@@ -34,7 +34,9 @@ export interface Block {
 }
 
 export interface Pointer {
+  /** Neighbourhood or street, or the distance and direction when the block has no mapped name. */
   name: string;
+  named: boolean;
   center: LngLat;
   distance: number;
   direction: string;
@@ -118,9 +120,10 @@ export function scanLocality(center: LngLat, index: FeatureIndex, ctx: AreaConte
   }
 
   // Pointers: worst and best blocks, one per name, skipping blocks the data can't speak for.
-  const named = (b: Block) => b.name ?? `${b.distance < 60 ? "Right here" : `${Math.round(b.distance / 50) * 50} m ${b.direction}`}`;
+  const named = (b: Block) => b.name ?? (b.distance < 60 ? "Right here" : `Streets ${Math.round(b.distance / 50) * 50} m ${b.direction}`);
   const pointer = (b: Block, s: BlockScore, when: Pointer["when"], list: "reasons" | "highlights"): Pointer => ({
     name: named(b),
+    named: !!b.name,
     center: b.center,
     distance: b.distance,
     direction: b.direction,
