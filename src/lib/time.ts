@@ -85,3 +85,12 @@ function isValid(d: Date) {
 export function isDark(period: LightPeriod) {
   return period === "night" || period === "late_night";
 }
+
+/** The instant the wall clock in `tz` reads hour:minute, on the same local day as `base`. */
+export function atLocalTime(base: Date, hour: number, minute: number, tz: string): Date {
+  const p = wallParts(base, tz);
+  const guess = Date.UTC(p.year, p.month - 1, p.day, hour, minute);
+  const w = wallParts(new Date(guess), tz);
+  const offset = Date.UTC(w.year, w.month - 1, w.day, w.hour, w.minute) - guess;
+  return new Date(guess - offset);
+}

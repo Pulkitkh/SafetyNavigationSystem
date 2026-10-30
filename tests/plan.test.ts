@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetDbForTests } from "@/lib/db";
+import { resetCellsForTests } from "@/lib/providers/cells";
 import { resetFailoverForTests } from "@/lib/providers/http";
 import { resetStreetForTests } from "@/lib/providers/street";
 import { destinationPoint, type LngLat } from "@/lib/geo";
@@ -69,6 +70,7 @@ beforeEach(() => {
   resetDbForTests(); // fresh in-memory cache per test
   resetFailoverForTests();
   resetStreetForTests();
+  resetCellsForTests();
   calls.length = 0;
 });
 

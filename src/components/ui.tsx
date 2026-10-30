@@ -185,7 +185,22 @@ export function Segmented<T extends string | number>({
 }
 
 /** Circular safety score. Colour and the word below both carry the meaning, never colour alone. */
-export function ScoreRing({ score, size = 64, label = "safety" }: { score: number | null; size?: number; label?: string }) {
+export function ScoreRing({ score, size = 64, label = "safety", unknown = false }: { score: number | null; size?: number; label?: string; unknown?: boolean }) {
+  if (unknown) {
+    return (
+      <div
+        className="relative flex shrink-0 flex-col items-center justify-center rounded-full border-[3px] border-dashed border-line-strong leading-none"
+        style={{ width: size, height: size }}
+        role="img"
+        aria-label="Not enough map data to score"
+      >
+        <span className="font-extrabold text-ink-2" style={{ fontSize: size * 0.3 }}>
+          ?
+        </span>
+        {size >= 56 && <span className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-ink-3">no data</span>}
+      </div>
+    );
+  }
   const color = scoreColor(score);
   const stroke = Math.max(5, size / 11);
   const r = size / 2 - stroke / 2 - 1;

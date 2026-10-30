@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
+import { cellStats } from "@/lib/providers/cells";
 import { checkUpstreams, summarise } from "@/lib/providers/health";
 import { olaEnabled } from "@/lib/providers/ola";
 import { telegramEnabled, vapidPublicKey, whatsappEnabled } from "@/lib/server/alerts";
@@ -38,5 +39,7 @@ export const GET = route(async (req: NextRequest) => {
     "Watchdog kept awake (CRON_SECRET)": on(!!process.env.CRON_SECRET?.trim()),
     "SOS SMS gateway": on(!!smsProvider()),
   };
-  return json({ ok: healthy, database, services, optional, probes, checkedAt: new Date().toISOString() }, healthy ? 200 : 503);
+  // Street data downloaded so far: how much of the map is ready for instant, detailed scoring.
+  const streetData = await cellStats().catch(() => null);
+  return json({ ok: healthy, database, services, optional, streetData, probes, checkedAt: new Date().toISOString() }, healthy ? 200 : 503);
 });

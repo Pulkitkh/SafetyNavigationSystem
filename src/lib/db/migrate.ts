@@ -54,6 +54,13 @@ CREATE TABLE IF NOT EXISTS "safenav"."guardian_invites" (
 	"contact_id" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
+CREATE TABLE IF NOT EXISTS "safenav"."osm_cells" (
+	"key" text PRIMARY KEY NOT NULL,
+	"data" text NOT NULL,
+	"bytes" integer NOT NULL,
+	"fetched_at" timestamp with time zone NOT NULL,
+	"used_at" timestamp with time zone DEFAULT now() NOT NULL
+);
 CREATE TABLE IF NOT EXISTS "safenav"."report_votes" (
 	"report_id" text NOT NULL,
 	"user_id" text NOT NULL,
@@ -193,6 +200,11 @@ ALTER TABLE "safenav"."guardian_devices" ADD COLUMN IF NOT EXISTS "created_at" t
 ALTER TABLE "safenav"."guardian_invites" ADD COLUMN IF NOT EXISTS "token_hash" text;
 ALTER TABLE "safenav"."guardian_invites" ADD COLUMN IF NOT EXISTS "contact_id" text;
 ALTER TABLE "safenav"."guardian_invites" ADD COLUMN IF NOT EXISTS "created_at" timestamp with time zone DEFAULT now() NOT NULL;
+ALTER TABLE "safenav"."osm_cells" ADD COLUMN IF NOT EXISTS "key" text;
+ALTER TABLE "safenav"."osm_cells" ADD COLUMN IF NOT EXISTS "data" text;
+ALTER TABLE "safenav"."osm_cells" ADD COLUMN IF NOT EXISTS "bytes" integer;
+ALTER TABLE "safenav"."osm_cells" ADD COLUMN IF NOT EXISTS "fetched_at" timestamp with time zone;
+ALTER TABLE "safenav"."osm_cells" ADD COLUMN IF NOT EXISTS "used_at" timestamp with time zone DEFAULT now() NOT NULL;
 ALTER TABLE "safenav"."report_votes" ADD COLUMN IF NOT EXISTS "report_id" text;
 ALTER TABLE "safenav"."report_votes" ADD COLUMN IF NOT EXISTS "user_id" text;
 ALTER TABLE "safenav"."report_votes" ADD COLUMN IF NOT EXISTS "value" integer;
@@ -353,6 +365,7 @@ CREATE INDEX IF NOT EXISTS "contacts_user_idx" ON "safenav"."contacts" USING btr
 CREATE INDEX IF NOT EXISTS "contacts_guardian_idx" ON "safenav"."contacts" USING btree ("guardian_user_id");
 CREATE UNIQUE INDEX IF NOT EXISTS "guardian_devices_addr_idx" ON "safenav"."guardian_devices" USING btree ("contact_id","kind","address");
 CREATE INDEX IF NOT EXISTS "guardian_devices_contact_idx" ON "safenav"."guardian_devices" USING btree ("contact_id");
+CREATE INDEX IF NOT EXISTS "osm_cells_used_idx" ON "safenav"."osm_cells" USING btree ("used_at");
 CREATE INDEX IF NOT EXISTS "reports_geo_idx" ON "safenav"."reports" USING btree ("lat","lng");
 CREATE INDEX IF NOT EXISTS "reports_observed_idx" ON "safenav"."reports" USING btree ("observed_at");
 CREATE INDEX IF NOT EXISTS "sessions_user_idx" ON "safenav"."sessions" USING btree ("user_id");

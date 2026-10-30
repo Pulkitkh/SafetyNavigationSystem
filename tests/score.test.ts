@@ -285,3 +285,34 @@ describe("helpers", () => {
     expect(part).toHaveLength(2);
   });
 });
+
+describe("honest about missing data", () => {
+  const start: LngLat = [75.86, 22.72];
+  const line = [start, destinationPoint(start, 0, 600)];
+
+  it("gives a range that widens where lighting isn't mapped, and ranks on its cautious side", () => {
+    const mapped = new FeatureIndex({ roads: [{ id: "w", tags: { highway: "residential", lit: "yes" }, geometry: line }], pois: [], areas: [] }, []);
+    const unmapped = new FeatureIndex({ roads: [{ id: "w", tags: { highway: "residential" }, geometry: line }], pois: [], areas: [] }, []);
+    const a = scoreRoute(line, 450, mapped, { departAt: NIGHT, tz: TZ });
+    const b = scoreRoute(line, 450, unmapped, { departAt: NIGHT, tz: TZ });
+    expect(b.range.hi - b.range.lo).toBeGreaterThan(a.range.hi - a.range.lo + 8);
+    expect(b.range.lo).toBeLessThan(b.score);
+    expect(b.conservative).toBeLessThan(b.score);
+    expect(b.confidence.notes.join(" ")).toMatch(/lighting is estimated/);
+  });
+
+  it("withholds a score when the route isn't on mapped streets", () => {
+    const elsewhere = destinationPoint(start, 90, 500);
+    const index = new FeatureIndex({ roads: [{ id: "w", tags: { highway: "residential", lit: "yes" }, geometry: [elsewhere, destinationPoint(elsewhere, 0, 600)] }], pois: [], areas: [] }, []);
+    const r = scoreRoute(line, 450, index, { departAt: NIGHT, tz: TZ });
+    expect(r.confidence.level).toBe("insufficient");
+    expect(r.stats.matchedShare).toBe(0);
+    expect(r.confidence.notes[0]).toMatch(/Too little of this route is on mapped streets/);
+  });
+
+  it("flags foot overbridges and stairways after dark", () => {
+    expect(walkpathScore({ highway: "footway", bridge: "yes" }, true)).toMatchObject({ score: 45, reason: expect.stringMatching(/overbridge/) });
+    expect(walkpathScore({ highway: "footway", bridge: "yes" }, false).score).toBe(75);
+    expect(walkpathScore({ highway: "steps" }, true).score).toBe(50);
+  });
+});

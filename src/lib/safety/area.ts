@@ -11,6 +11,7 @@ import {
   activityScore,
   AREA_PENALTY,
   communityScore,
+  confidenceOf,
   FeatureIndex,
   FRONTAGE_M,
   frontageScore,
@@ -23,6 +24,7 @@ import {
   transitScore,
   walkpathScore,
   WEIGHTS,
+  type ConfidenceLevel,
 } from "./score";
 
 const STREET_RADIUS_M = 150;
@@ -57,7 +59,14 @@ export interface AreaSafety {
   /** Nearest open hospital, fuel station or pharmacy: somewhere to wait for help. */
   nearestHaven: NearbyPlace | null;
   stats: { streetsM: number; litShare: number | null; openPlaces: number; cctv: number; reports: number };
-  confidence: "high" | "medium" | "low";
+  /** "insufficient": too little is mapped here to give a score; the app says so instead of showing one. */
+  confidence: ConfidenceLevel;
+  /** The score if every unmapped input were at its worst / best plausible value. */
+  range: { lo: number; hi: number };
+  /** What the score couldn't see, in plain words. */
+  notes: string[];
+  /** The neighbourhood or village this spot is in, when mapped nearby. */
+  place?: string;
   /** Set when the score had to use the lighter vector-tile data. */
   dataNote?: string;
 }
@@ -99,8 +108,9 @@ export function scoreArea(point: LngLat, index: FeatureIndex, ctx: AreaContext):
       if (haversine(point, s.point) <= STREET_RADIUS_M) samples.push({ point: s.point, tags: item.road.tags });
     }
   }
+  const onStreets = samples.length > 0;
   if (!samples.length) samples.push({ point, tags: index.nearestRoad(point, 60)?.road.tags ?? {} });
-  const streetsM = samples.length * 20;
+  const streetsM = onStreets ? samples.length * 20 : 0;
 
   const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
   const lights = samples.map((s) => {
@@ -147,8 +157,8 @@ export function scoreArea(point: LngLat, index: FeatureIndex, ctx: AreaContext):
   const majorShare = samples.filter((s) => /^(trunk|primary|secondary)/.test(s.tags.highway ?? "")).length / samples.length;
   if (dark && majorShare > 0.5) activity = Math.min(100, activity + 8);
 
-  // Buildings alongside the streets.
-  const buildingsMapped = index.buildingCount >= 5;
+  // Buildings alongside the streets: judged only where buildings are mapped around this spot.
+  const buildingsMapped = index.buildings.near(point, 200).length >= 10;
   const alongside = samples.filter((s) => index.buildings.near(s.point, 150).some(({ item }) => distanceToBBox(s.point, item) <= FRONTAGE_M)).length;
 
   let reportTotal = 0;
@@ -176,6 +186,24 @@ export function scoreArea(point: LngLat, index: FeatureIndex, ctx: AreaContext):
   for (const f of FACTORS) score += factors[f] * weights[f];
   score = Math.round(score);
 
+  // Plausible range: unmapped inputs at their worst and best.
+  const lo = { ...factors };
+  const hi = { ...factors };
+  lo.lighting = Math.round(mean(lights.map((l) => (l.known ? l.score : Math.max(5, l.score - 30)))));
+  hi.lighting = Math.round(mean(lights.map((l) => (l.known ? l.score : Math.min(100, l.score + 30)))));
+  lo.walkpath = Math.round(mean(walks.map((w) => (w.known ? w.score : Math.max(5, w.score - 20)))));
+  hi.walkpath = Math.round(mean(walks.map((w) => (w.known ? w.score : Math.min(100, w.score + 20)))));
+  if (!buildingsMapped) [lo.frontage, hi.frontage] = [20, 85];
+  const fromTiles = index.fromTiles(point);
+  if (index.placesSparse || fromTiles) hi.activity = Math.min(100, activity + 40);
+  let scoreLo = 0;
+  let scoreHi = 0;
+  for (const f of FACTORS) {
+    scoreLo += lo[f] * weights[f];
+    scoreHi += hi[f] * weights[f];
+  }
+  const range = { lo: Math.min(score, Math.round(scoreLo)), hi: Math.max(score, Math.round(scoreHi)) };
+
   const litKnown = lights.filter((l) => l.known);
   const litShare = litKnown.length ? litKnown.filter((l) => l.score >= 75).length / litKnown.length : null;
   const lightingMapped = litKnown.length / samples.length >= 0.3;
@@ -197,8 +225,13 @@ export function scoreArea(point: LngLat, index: FeatureIndex, ctx: AreaContext):
   if (weights.lighting > 0 && lightingMapped && litShare != null && litShare >= 0.6) highlights.push("Most mapped streets here are lit");
   if (cctv) highlights.push(`${cctv} mapped CCTV camera${cctv > 1 ? "s" : ""}`);
 
-  const fromTiles = index.source === "tiles";
-  const coverage = mean([samples.length > 1 ? 1 : 0, litKnown.length / samples.length, buildingsMapped ? 1 : 0, ...(fromTiles ? [0.2] : [])]);
+  const notes: string[] = [];
+  if (!onStreets) notes.push("No mapped streets within 150 m of this spot, so it can't be scored.");
+  if (weights.lighting > 0 && !lightingMapped) notes.push("Street lighting isn't mapped around here, so it's estimated from the type of road.");
+  if (index.placesSparse) notes.push("Shops and eateries look under-mapped here, so there may be more people around than counted.");
+  if (!buildingsMapped) notes.push("Buildings aren't mapped around here, so homes and shops facing the street aren't judged.");
+  const confidence = confidenceOf(range.hi - range.lo, onStreets ? 1 : 0);
+  if (confidence === "insufficient" && onStreets) notes.unshift(`Too much is unmapped here to give a reliable score: it could be anywhere from ${range.lo} to ${range.hi}.`);
   open.sort((a, b) => a.distance - b.distance);
   return {
     score,
@@ -212,7 +245,10 @@ export function scoreArea(point: LngLat, index: FeatureIndex, ctx: AreaContext):
     nearestPolice: police,
     nearestHaven: haven,
     stats: { streetsM, litShare: litShare == null ? null : Math.round(litShare * 100) / 100, openPlaces: open.length, cctv, reports },
-    confidence: coverage >= 0.6 ? "high" : coverage >= 0.3 ? "medium" : "low",
+    confidence,
+    range,
+    notes,
+    ...(index.placeNear(point, 1200) ? { place: index.placeNear(point, 1200)!.place.name } : {}),
     ...(fromTiles
       ? { dataNote: "Live street details (lamps, opening hours) were unavailable, so this uses the map's base data and typical opening hours." }
       : {}),

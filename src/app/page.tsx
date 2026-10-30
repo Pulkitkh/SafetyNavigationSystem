@@ -96,6 +96,20 @@ export default function PlanPage() {
     }
   }, []);
 
+  // Once per visit, have the server fetch the streets around here, so the first plan is quick.
+  const warmed = here != null;
+  useEffect(() => {
+    if (!warmed || !here) return;
+    try {
+      if (sessionStorage.getItem("safenav.warmed")) return;
+      sessionStorage.setItem("safenav.warmed", "1");
+    } catch {
+      // fine: warm anyway
+    }
+    void fetch(`/api/street/prewarm?lng=${here[0].toFixed(3)}&lat=${here[1].toFixed(3)}`, { method: "POST" }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [warmed]);
+
   // Default the start to the current location once GPS is available.
   useEffect(() => {
     if (!from && here) setFrom({ label: "Your current location", point: here, current: true });
@@ -409,6 +423,11 @@ export default function PlanPage() {
               {error}
             </Callout>
           )}
+          {plan?.advice && (
+            <Callout tone="danger" icon={TriangleAlert}>
+              {plan.advice}
+            </Callout>
+          )}
           {plan?.dataNote && (
             <Callout tone="caution" icon={Info}>
               {plan.dataNote}
@@ -424,6 +443,7 @@ export default function PlanPage() {
           {plan && plan.routes.length > 0 && (
             <p className="eyebrow px-1 pt-1">
               {plan.routes.length} route{plan.routes.length > 1 ? "s" : ""} · safest first
+              {plan.searched?.safetySearch ? ` · ${plan.searched.streetsScored.toLocaleString("en-IN")} streets checked for a safer way` : ""}
             </p>
           )}
           {plan?.routes.map((r) => (

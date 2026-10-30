@@ -40,10 +40,19 @@ export interface Area {
   ring: LngLat[];
 }
 
+/** A named neighbourhood, suburb or village, for naming parts of an area. */
+export interface Place {
+  id: string;
+  name: string;
+  kind: string; // OSM place=*
+  point: LngLat;
+}
+
 export interface OsmFeatures {
   roads: Road[];
   pois: Poi[];
   areas: Area[];
+  places?: Place[];
   /** Footprint bounds of buildings near the route: homes and shops facing the street. */
   buildings?: BBox[];
   /** "tiles" when Overpass was unavailable and vector tiles were used (no lamps, lit tags or opening hours). */
@@ -185,6 +194,10 @@ const ROAD_TAGS = new Set([
   "lanes",
   "maxspeed",
   "access",
+  "ref",
+  "layer",
+  "covered",
+  "indoor",
 ]);
 
 export function classifyPoi(tags: Record<string, string>): PoiKind | null {
@@ -284,6 +297,7 @@ export function parseOverpass(elements: OverpassElement[]): OsmFeatures {
   const pois: Poi[] = [];
   const areas: Area[] = [];
   const buildings: BBox[] = [];
+  const places: Place[] = [];
   const seen = new Set<string>();
 
   for (const el of elements) {
@@ -326,6 +340,11 @@ export function parseOverpass(elements: OverpassElement[]): OsmFeatures {
     const lat = el.lat ?? el.center?.lat;
     const lon = el.lon ?? el.center?.lon;
     if (lat == null || lon == null) continue;
+    const placeName = tags["name:en"] || tags.name;
+    if (tags.place && placeName && PLACE_KINDS.has(tags.place)) {
+      places.push({ id, name: placeName, kind: tags.place, point: [lon, lat] });
+      continue;
+    }
     const kind = classifyPoi(tags);
     if (!kind) continue;
     pois.push({
@@ -337,8 +356,11 @@ export function parseOverpass(elements: OverpassElement[]): OsmFeatures {
       phone: tags.phone || tags["contact:phone"],
     });
   }
-  return { roads, pois, areas, buildings };
+  return { roads, pois, areas, buildings, places };
 }
+
+/** Place types small enough to name a part of a city. */
+export const PLACE_KINDS = new Set(["suburb", "neighbourhood", "quarter", "locality", "village", "hamlet", "town", "city_block", "isolated_dwelling"]);
 
 /**
  * Public Overpass instances listed on the OSM wiki; OVERPASS_URL (comma-separated)
@@ -372,28 +394,31 @@ export function assertCompleteOverpass(data: OverpassResponse): OverpassResponse
 /** Total time allowed across all mirrors, so a plan request finishes within the function limit. */
 const OVERPASS_BUDGET_MS = 45_000;
 
+/** One Overpass query against the mirrors in turn, uncached. */
+export function overpassRequest(query: string, budgetMs = OVERPASS_BUDGET_MS): Promise<OverpassResponse> {
+  const deadline = Date.now() + budgetMs;
+  return withFailover(endpoints(process.env.OVERPASS_URL, OVERPASS_MIRRORS), async (url, remaining) => {
+    const left = deadline - Date.now();
+    if (left < 5_000) throw new SkipEndpoint("OpenStreetMap data: out of time");
+    return assertCompleteOverpass(
+      await fetchJson<OverpassResponse>(url, {
+        service: "OpenStreetMap data",
+        // A fair share of what's left, so one hanging mirror can't starve the others.
+        timeoutMs: Math.min(50_000, left, Math.max(20_000, left / remaining)),
+        // The next mirror is the retry.
+        retries: 0,
+        init: {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: `data=${encodeURIComponent(query)}`,
+        },
+      }),
+    );
+  }, Date.now, "OpenStreetMap data");
+}
+
 async function runQuery(query: string, ttlMs: number) {
-  return cached("overpass", query, ttlMs, () => {
-    const deadline = Date.now() + OVERPASS_BUDGET_MS;
-    return withFailover(endpoints(process.env.OVERPASS_URL, OVERPASS_MIRRORS), async (url, remaining) => {
-      const left = deadline - Date.now();
-      if (left < 5_000) throw new SkipEndpoint("OpenStreetMap data: out of time");
-      return assertCompleteOverpass(
-        await fetchJson<OverpassResponse>(url, {
-          service: "OpenStreetMap data",
-          // A fair share of what's left, so one hanging mirror can't starve the others.
-          timeoutMs: Math.min(40_000, left, Math.max(20_000, left / remaining)),
-          // The next mirror is the retry.
-          retries: 0,
-          init: {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: `data=${encodeURIComponent(query)}`,
-          },
-        }),
-      );
-    }, Date.now, "OpenStreetMap data");
-  });
+  return cached("overpass", query, ttlMs, () => overpassRequest(query));
 }
 
 /** Street-level features around each candidate route, in a single Overpass request. */

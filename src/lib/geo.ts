@@ -212,6 +212,25 @@ export class GridIndex<T> {
     else this.cells.set(k, [{ p, item }]);
   }
 
+  /** Whether any item within `radiusM` of `p` passes `pred`; stops at the first one. */
+  some(p: LngLat, radiusM: number, pred: (item: T, distance: number) => boolean): boolean {
+    const latSpan = Math.ceil(radiusM / 111_320 / this.cellDeg);
+    const lngSpan = Math.ceil(radiusM / (111_320 * Math.max(0.1, Math.cos(toRad(p[1])))) / this.cellDeg);
+    const cx = Math.floor(p[0] / this.cellDeg);
+    const cy = Math.floor(p[1] / this.cellDeg);
+    for (let x = cx - lngSpan; x <= cx + lngSpan; x++) {
+      for (let y = cy - latSpan; y <= cy + latSpan; y++) {
+        const list = this.cells.get(`${x}:${y}`);
+        if (!list) continue;
+        for (const e of list) {
+          const d = haversine(p, e.p);
+          if (d <= radiusM && pred(e.item, d)) return true;
+        }
+      }
+    }
+    return false;
+  }
+
   /** Items within `radiusM` of `p`, with their distances. */
   near(p: LngLat, radiusM: number): { item: T; distance: number }[] {
     const latSpan = Math.ceil(radiusM / 111_320 / this.cellDeg);

@@ -1,15 +1,16 @@
 "use client";
 
-import { Hospital, Fuel, Pill, MapPin, Navigation, RefreshCw, Share2, Shield, Timer, TriangleAlert, CircleCheck, Store } from "lucide-react";
+import { Hospital, Fuel, Pill, MapPin, Navigation, RefreshCw, Share2, Shield, Timer, TriangleAlert, CircleCheck, Store, Info, Moon, Sun } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Map, { type MapMarker } from "@/components/Map";
+import Map, { type MapMarker, type MapZone } from "@/components/Map";
 import { PageHeader } from "@/components/Nav";
 import { Badge, Callout, IconTile, ScoreRing, SectionTitle } from "@/components/ui";
 import { api, formatDistance } from "@/lib/client/api";
 import { useGeolocation } from "@/lib/client/hooks";
 import type { LngLat } from "@/lib/geo";
 import type { AreaSafety, NearbyPlace } from "@/lib/safety/area";
+import type { LocalityScan, Pointer } from "@/lib/safety/locality";
 import { FACTOR_LABELS, FACTORS, scoreColor } from "@/lib/safety/factors";
 import { mapsLink } from "@/lib/sos";
 
@@ -20,6 +21,29 @@ const BAND = {
 } as const;
 
 const PERIOD = { day: "Daylight", twilight: "Dusk / dawn", night: "After dark", late_night: "Late night" } as const;
+
+const CONFIDENCE = { high: "Well mapped", medium: "Partly mapped", low: "Thinly mapped", insufficient: "Not enough data" } as const;
+
+function PointerRow({ p, tone }: { p: Pointer; tone: "danger" | "good" }) {
+  return (
+    <li className="flex items-start gap-3 px-4 py-3">
+      <IconTile icon={tone === "danger" ? TriangleAlert : CircleCheck} tone={tone} size="sm" />
+      <div className="min-w-0 flex-1">
+        <p className="break-words font-bold leading-snug text-ink">{p.name}</p>
+        <p className="text-[13px] text-ink-2">
+          {p.direction === "here" ? "Right here" : `${formatDistance(p.distance)} ${p.direction}`} · {p.when === "after dark" ? "after dark" : "now"} · scores {p.score}
+        </p>
+        {p.reasons.length > 0 && <p className="mt-0.5 text-[13px] text-ink-2">{p.reasons.join("; ")}</p>}
+      </div>
+      {tone === "good" && (
+        <Link href={`/?to=${p.center[0]},${p.center[1]}&label=${encodeURIComponent(p.name)}`} aria-label={`Safest route to ${p.name}`} className="btn btn-secondary btn-sm shrink-0">
+          <Navigation className="h-4 w-4" aria-hidden />
+          Go
+        </Link>
+      )}
+    </li>
+  );
+}
 
 function placeIcon(kind: string) {
   if (kind === "police") return Shield;
@@ -57,6 +81,10 @@ export default function AreaPage() {
   const [checkedAt, setCheckedAt] = useState<Date | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scan, setScan] = useState<LocalityScan | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [showNight, setShowNight] = useState(false);
 
   const here: LngLat | null = geo.fix ? [geo.fix.lng, geo.fix.lat] : null;
   useEffect(() => {
@@ -78,9 +106,39 @@ export default function AreaPage() {
     }
   }, []);
 
+  const scanAround = useCallback(async (p: LngLat) => {
+    setScanning(true);
+    setScanError(null);
+    setScan(null);
+    try {
+      const res = await api<{ scan: LocalityScan }>(`/api/safety/nearby?lng=${p[0].toFixed(6)}&lat=${p[1].toFixed(6)}`);
+      setScan(res.scan);
+    } catch (err) {
+      setScanError((err as Error).message);
+    } finally {
+      setScanning(false);
+    }
+  }, []);
+
   useEffect(() => {
-    if (point) void check(point);
-  }, [point, check]);
+    if (!point) return;
+    void check(point).then(() => scanAround(point));
+  }, [point, check, scanAround]);
+
+  const zones: MapZone[] = useMemo(
+    () =>
+      (scan?.blocks ?? []).map((b, i) => {
+        const s = showNight && b.night ? b.night : b.now;
+        return {
+          id: `b${i}`,
+          point: b.center,
+          radiusM: 125,
+          score: s.confidence === "insufficient" ? null : s.score,
+          label: `${b.name ?? `${formatDistance(b.distance)} ${b.direction}`}: ${s.confidence === "insufficient" ? "not enough data" : `${s.score}`}`,
+        };
+      }),
+    [scan, showNight],
+  );
 
   const markers: MapMarker[] = useMemo(() => {
     const m: MapMarker[] = [];
@@ -109,6 +167,7 @@ export default function AreaPage() {
           <Map
             user={here ? { point: here, accuracy: geo.fix?.accuracy } : null}
             markers={markers}
+            zones={zones}
             onMapClick={(p) => {
               setCustom(true);
               setPoint(p);
@@ -157,15 +216,21 @@ export default function AreaPage() {
           <>
             <section className="card rise p-4" aria-labelledby="verdict">
               <div className="flex items-center gap-4">
-                <ScoreRing score={area.score} size={76} />
+                <ScoreRing score={area.score} size={76} unknown={area.confidence === "insufficient"} />
                 <div className="min-w-0 flex-1">
-                  <p id="verdict" className={`text-lg font-extrabold leading-snug ${BAND[area.band].cls}`}>
-                    {BAND[area.band].text}
+                  {area.place && <p className="text-[13px] font-semibold text-ink-2">{area.place}</p>}
+                  <p id="verdict" className={`text-lg font-extrabold leading-snug ${area.confidence === "insufficient" ? "text-ink" : BAND[area.band].cls}`}>
+                    {area.confidence === "insufficient" ? "Not enough map data to judge this spot" : BAND[area.band].text}
                   </p>
+                  {area.confidence !== "insufficient" && area.range.hi - area.range.lo >= 6 && (
+                    <p className="text-[13px] text-ink-2">
+                      Likely {area.range.lo}–{area.range.hi}, depending on what isn&apos;t mapped
+                    </p>
+                  )}
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
                     <Badge tone="neutral">{PERIOD[area.period]}</Badge>
                     <Badge tone="neutral">{checkedAt?.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}</Badge>
-                    <Badge tone={area.confidence === "low" ? "caution" : "neutral"}>Map data {area.confidence}</Badge>
+                    <Badge tone={area.confidence === "low" || area.confidence === "insufficient" ? "caution" : "neutral"}>{CONFIDENCE[area.confidence]}</Badge>
                     {custom && <Badge tone="brand">Chosen spot</Badge>}
                   </div>
                 </div>
@@ -178,9 +243,13 @@ export default function AreaPage() {
                   <RefreshCw className={`h-5 w-5 ${loading ? "animate-spin" : ""}`} />
                 </button>
               </div>
-              {area.dataNote && (
+              {(area.dataNote || area.notes.length > 0) && (
                 <div className="mt-3">
-                  <Callout tone="caution">{area.dataNote}</Callout>
+                  <Callout tone="caution" icon={Info}>
+                    {[...area.notes, ...(area.dataNote ? [area.dataNote] : [])].map((n) => (
+                      <p key={n}>{n}</p>
+                    ))}
+                  </Callout>
                 </div>
               )}
               {(area.reasons.length > 0 || area.highlights.length > 0) && (
@@ -212,6 +281,78 @@ export default function AreaPage() {
                   </li>
                 ))}
               </ul>
+            </section>
+
+            <section aria-labelledby="around-title" className="space-y-3">
+              <SectionTitle
+                id="around-title"
+                action={
+                  scan?.blocks.some((b) => b.night) ? (
+                    <button onClick={() => setShowNight((v) => !v)} aria-pressed={showNight} className="chip">
+                      {showNight ? <Moon className="h-4 w-4" aria-hidden /> : <Sun className="h-4 w-4" aria-hidden />}
+                      {showNight ? "Map: after dark" : "Map: now"}
+                    </button>
+                  ) : undefined
+                }
+              >
+                Around you
+              </SectionTitle>
+              {scanning && (
+                <div className="card flex items-center gap-3 p-4 text-sm text-ink-2" aria-busy="true">
+                  <span className="h-5 w-5 animate-spin rounded-full border-2 border-line border-t-brand" aria-hidden />
+                  Checking streets up to 1 km around, now and after dark…
+                </div>
+              )}
+              {scanError && <Callout tone="caution">Couldn&apos;t check the streets around: {scanError}</Callout>}
+              {scan && (
+                <>
+                  <div className="card p-4">
+                    <p className="text-sm font-bold text-ink">This spot through the day</p>
+                    <ul className="mt-2 grid grid-cols-5 gap-1.5">
+                      {scan.profile.map((x) => (
+                        <li key={x.label} className="card-inset flex flex-col items-center px-1 py-2 text-center">
+                          <span className="text-[11px] font-semibold text-ink-2">{x.label}</span>
+                          <span className="text-lg font-extrabold" style={{ color: x.confidence === "insufficient" ? undefined : scoreColor(x.score) }}>
+                            {x.confidence === "insufficient" ? "?" : x.score}
+                          </span>
+                          <span className="text-[10px] text-ink-3">{new Date(x.at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-2 text-[13px] text-ink-2">On the map, each circle is a block of streets: green safer, amber take care, red avoid, grey not enough data.</p>
+                  </div>
+                  {scan.avoid.length > 0 && (
+                    <div>
+                      <p className="mb-1.5 px-1 text-sm font-bold text-danger">Nearby to avoid</p>
+                      <ul className="card divide-y divide-line overflow-hidden">
+                        {scan.avoid.map((p) => (
+                          <PointerRow key={`${p.name}-${p.when}`} p={p} tone="danger" />
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {scan.safer.length > 0 && (
+                    <div>
+                      <p className="mb-1.5 px-1 text-sm font-bold text-good">Safer places nearby</p>
+                      <ul className="card divide-y divide-line overflow-hidden">
+                        {scan.safer.map((p) => (
+                          <PointerRow key={p.name} p={p} tone="good" />
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {!scan.avoid.length && !scan.safer.length && scan.blocks.length > 0 && (
+                    <p className="px-1 text-sm text-ink-2">
+                      No nearby streets stand out as clearly safer or clearly worse{scan.unscoredShare > 0.3 ? ", partly because much of the area is thinly mapped" : ""}.
+                    </p>
+                  )}
+                  {scan.notes.map((n) => (
+                    <Callout key={n} tone="caution" icon={Info}>
+                      {n}
+                    </Callout>
+                  ))}
+                </>
+              )}
             </section>
 
             {(area.nearestHaven || area.nearestPolice) && (

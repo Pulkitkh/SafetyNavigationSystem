@@ -14,6 +14,12 @@
  *
  * The constants below are a transparent heuristic, not a trained model. They are
  * documented in docs/SAFETY_MODEL.md and kept in one place so they can be tuned.
+ *
+ * Unknown is never scored as safe. Where an input isn't mapped (lighting on most
+ * Indian streets, footpaths along many main roads, shops in some areas) the
+ * score uses a conservative prior, and the input's plausible range is carried
+ * through, so each score comes with a range and a statement of how much rests
+ * on estimates. Routes are ranked on the pessimistic side of that range.
  */
 import OpeningHours from "opening_hours";
 import {
@@ -27,9 +33,8 @@ import {
   resample,
   type BBox,
   type LngLat,
-  type Sample,
 } from "@/lib/geo";
-import type { Area, AreaKind, OsmFeatures, Poi, PoiKind, Road } from "@/lib/providers/overpass";
+import type { Area, AreaKind, OsmFeatures, Place, Poi, PoiKind, Road } from "@/lib/providers/overpass";
 import { REPORT_MAX_AGE_DAYS, reportCategory } from "@/lib/reports";
 import { isDark, lightPeriod, wallClockDate, wallParts, type LightPeriod } from "@/lib/time";
 
@@ -72,6 +77,9 @@ export interface ScoredSegment {
   to: number;
   coordinates: LngLat[];
   score: number;
+  /** Plausible range of the score given what's unmapped here. */
+  lo?: number;
+  hi?: number;
   factors: Record<Factor, number>;
   reasons: string[];
 }
@@ -85,6 +93,8 @@ export interface WeakStretch {
   reasons: string[];
 }
 
+export type ConfidenceLevel = "high" | "medium" | "low" | "insufficient";
+
 export interface RouteSafety {
   score: number;
   band: "good" | "caution" | "avoid";
@@ -94,7 +104,15 @@ export interface RouteSafety {
   segments: ScoredSegment[];
   weakStretches: WeakStretch[];
   highlights: string[];
-  confidence: { level: "high" | "medium" | "low"; coverage: number; notes: string[] };
+  /**
+   * How far the score rests on mapped facts. "insufficient": too little is
+   * mapped to give a score; the app says so instead of showing one.
+   */
+  confidence: { level: ConfidenceLevel; coverage: number; notes: string[] };
+  /** The score if every unmapped input were at its worst / best plausible value. */
+  range: { lo: number; hi: number };
+  /** Ranking score: halfway between the score and its pessimistic end, so a route doesn't win on unknowns. */
+  conservative: number;
   stats: {
     litShare: number | null;
     footpathShare: number;
@@ -104,6 +122,10 @@ export interface RouteSafety {
     reportsNearby: number;
     /** Distinct flights of steps the route uses. */
     steps: number;
+    /** Share of the route matched to a mapped street or path. */
+    matchedShare: number;
+    /** Share of the route scored from the lighter vector-tile data. */
+    tilesShare: number;
   };
 }
 
@@ -116,17 +138,31 @@ interface RoadSegmentRef {
   i: number;
 }
 
+export interface IndexOptions {
+  /** Parts of the area filled from vector tiles rather than Overpass. */
+  tileBoxes?: BBox[];
+}
+
 export class FeatureIndex {
   readonly roads = new GridIndex<RoadSegmentRef>(60);
   readonly pois = new GridIndex<Poi>(120);
   readonly reports = new GridIndex<CommunityReport>(120);
   readonly buildings = new GridIndex<BBox>(60);
+  readonly places = new GridIndex<Place>(400);
   readonly buildingCount: number;
   readonly source: "overpass" | "tiles";
   readonly areas: { area: Area; bbox: BBox }[];
+  readonly tileBoxes: BBox[];
+  /**
+   * Shops and eateries look under-mapped: many buildings but almost no places,
+   * so "few shops around" may be a mapping gap rather than a fact.
+   */
+  readonly placesSparse: boolean;
   private readonly ohCache = new Map<string, OpeningHours | null>();
+  private readonly areaGrid = new GridIndex<number>(150);
+  private readonly largeAreas: number[] = [];
 
-  constructor(features: OsmFeatures, reports: CommunityReport[]) {
+  constructor(features: OsmFeatures, reports: CommunityReport[], opts: IndexOptions = {}) {
     for (const road of features.roads) {
       for (let i = 0; i < road.geometry.length - 1; i++) {
         const a = road.geometry[i];
@@ -155,6 +191,33 @@ export class FeatureIndex {
     this.buildingCount = features.buildings?.length ?? 0;
     this.source = features.source ?? "overpass";
     this.areas = features.areas.map((area) => ({ area, bbox: bboxOf(area.ring) }));
+    // Index each land-use area by the grid cells its bounds cover, so a point only tests nearby polygons.
+    this.areas.forEach(({ bbox }, i) => {
+      const step = 0.001;
+      const n = Math.ceil((bbox.maxLng - bbox.minLng) / step + 1) * Math.ceil((bbox.maxLat - bbox.minLat) / step + 1);
+      if (n > 40_000) return void this.largeAreas.push(i);
+      for (let lng = bbox.minLng; lng <= bbox.maxLng + step; lng += step) {
+        for (let lat = bbox.minLat; lat <= bbox.maxLat + step; lat += step) this.areaGrid.insert([lng, lat], i);
+      }
+    });
+    for (const p of features.places ?? []) this.places.insert(p.point, p);
+    this.tileBoxes = opts.tileBoxes ?? [];
+    const activityPois = features.pois.filter((p) => ACTIVITY_WEIGHT[p.kind] != null && p.kind !== "transit").length;
+    const roadKm = features.roads.reduce((a, r) => a + (r.geometry.length > 1 ? haversine(r.geometry[0], r.geometry.at(-1)!) : 0), 0) / 1000;
+    this.placesSparse = (this.buildingCount >= 300 && activityPois / this.buildingCount < 0.004) || (activityPois < 3 && roadKm > 5);
+  }
+
+  /** Whether `p` lies in a part filled from vector tiles. */
+  fromTiles(p: LngLat): boolean {
+    if (this.source === "tiles") return true;
+    return this.tileBoxes.some((b) => inBBox(p, b));
+  }
+
+  /** Nearest named neighbourhood, suburb or village within `maxM`. */
+  placeNear(p: LngLat, maxM = 1500): { place: Place; distance: number } | null {
+    let best: { place: Place; distance: number } | null = null;
+    for (const { item, distance } of this.places.near(p, maxM)) if (!best || distance < best.distance) best = { place: item, distance };
+    return best;
   }
 
   /** Closest mapped road or path to `p`, if one lies within `maxM`. */
@@ -173,9 +236,16 @@ export class FeatureIndex {
 
   areasAt(p: LngLat): AreaKind[] {
     const out: AreaKind[] = [];
-    for (const { area, bbox } of this.areas) {
+    const tested = new Set<number>();
+    const test = (i: number) => {
+      if (tested.has(i)) return;
+      tested.add(i);
+      const { area, bbox } = this.areas[i];
       if (inBBox(p, bbox) && pointInPolygon(p, area.ring)) out.push(area.kind);
-    }
+    };
+    for (const { item } of this.areaGrid.near(p, 160)) test(item);
+    // Very large areas (a forest, an airport) are tested directly.
+    for (const i of this.largeAreas) test(i);
     return out;
   }
 
@@ -262,9 +332,13 @@ function baseWalkpath(tags: Record<string, string> | undefined, dark: boolean, o
     if (opts.heavyRain) return { score: 20, known: true, reason: "Underpass may be waterlogged in heavy rain" };
     return { score: dark ? 30 : 60, known: true, reason: "Pedestrian underpass" };
   }
+  // Foot overbridges are often empty after dark, with nowhere to go but the far end.
+  if (tags.bridge && tags.bridge !== "no" && (hw === "footway" || hw === "path" || hw === "steps")) {
+    return dark ? { score: 45, known: true, reason: "Foot overbridge, often empty after dark" } : { score: 75, known: true };
+  }
   if (PEDESTRIAN.has(hw)) return { score: 90, known: true };
   if (hw === "cycleway") return { score: 75, known: true };
-  if (hw === "steps") return { score: 65, known: true };
+  if (hw === "steps") return dark ? { score: 50, known: true, reason: "Stairway, little natural surveillance after dark" } : { score: 65, known: true };
   if (hw === "path") return { score: dark ? 45 : 60, known: true };
   if (hw === "track" || hw === "bridleway") return { score: dark ? 25 : 40, known: true, reason: "Unpaved track" };
   const isMajor = MAJOR.has(hw) || hw === "tertiary" || hw === "tertiary_link";
@@ -431,179 +505,214 @@ export function communityScore(totalWeight: number): number {
   return Math.round(80 + 20 * (1 - Math.exp(totalWeight)));
 }
 
+
 // ---------------------------------------------------------------------------
-// Route scoring
+// Stretch evaluation: shared by route scoring, safe-path search and area checks
 // ---------------------------------------------------------------------------
 
 export const HAVEN_KINDS = new Set<PoiKind>(["hospital", "fuel", "pharmacy"]);
 
-interface SampleFacts {
-  sample: Sample;
+/** How far an unmapped input may plausibly sit from its prior, for the score range. */
+const UNKNOWN_LIGHT_SPREAD = 30;
+const UNKNOWN_WALK_SPREAD = 20;
+const UNKNOWN_FRONTAGE: [number, number] = [20, 85];
+/** Missing shops can only mean more people than counted, never fewer. */
+const SPARSE_PLACES_UPLIFT = 40;
+
+/**
+ * Places counted within 60 m of a stretch of length L cover L·120 + π·60² m².
+ * A 100 m stretch is the reference, so counts are scaled to that area.
+ */
+const PLACES_RADIUS_M = 60;
+const REF_AREA = 100 * 2 * PLACES_RADIUS_M + Math.PI * PLACES_RADIUS_M ** 2;
+export function placesScale(lengthM: number) {
+  return REF_AREA / (Math.max(0, lengthM) * 2 * PLACES_RADIUS_M + Math.PI * PLACES_RADIUS_M ** 2);
+}
+
+const clamp = (v: number, lo = 0, hi = 100) => Math.min(hi, Math.max(lo, v));
+
+export interface SampleFacts {
+  point: LngLat;
+  road: Road | null;
   light: { score: number; known: boolean };
   walk: { score: number; known: boolean; reason?: string };
   isolation: { score: number; worst?: AreaKind };
-  roadMatched: boolean;
   major: boolean;
   footpath: boolean;
+  tiles: boolean;
 }
 
-export function scoreRoute(
-  coordinates: LngLat[],
-  durationS: number,
-  index: FeatureIndex,
-  ctx: ScoringContext,
-): RouteSafety {
-  const samples = resample(coordinates, SAMPLE_STEP_M);
-  const total = samples.at(-1)?.at ?? 0;
-  const mid = coordinates[Math.floor(coordinates.length / 2)] ?? coordinates[0];
-  // One light period for the whole trip keeps explanations coherent; it is taken at the midpoint time.
-  const midTime = new Date(ctx.departAt.getTime() + (durationS * 1000) / 2);
-  const period = lightPeriod(midTime, mid[1], mid[0], ctx.tz);
-  const dark = isDark(period);
-  const weights = WEIGHTS[period];
-  const etaAt = (at: number) => new Date(ctx.departAt.getTime() + (total > 0 ? (at / total) * durationS * 1000 : 0));
+export interface StretchResult {
+  factors: Record<Factor, number>;
+  lo: Record<Factor, number>;
+  hi: Record<Factor, number>;
+  score: number;
+  scoreLo: number;
+  scoreHi: number;
+  reasons: string[];
+  openIds: string[];
+  cctvIds: string[];
+  reportIds: string[];
+  policeM: number | null;
+  ohKnown: number;
+  ohTotal: number;
+}
 
-  const stepWays = new Set<string>();
-  const facts: SampleFacts[] = samples.map((sample) => {
-    const road = index.nearestRoad(sample.point, 20) ?? index.nearestRoad(sample.point, 35);
-    const tags = road?.road.tags;
-    const lamps = index.pois.near(sample.point, 35).filter((n) => n.item.kind === "lamp").length;
-    const walk = walkpathScore(tags, dark, { stepFree: ctx.stepFree, heavyRain: ctx.heavyRain });
+/**
+ * Evaluates stretches of street at a given moment. One instance per plan or
+ * check: it caches what is shared between nearby stretches (help nearby,
+ * opening hours).
+ */
+export class StretchEvaluator {
+  readonly period: LightPeriod;
+  readonly dark: boolean;
+  readonly weights: Record<Factor, number>;
+  private readonly helpMemo = new Map<string, { policeM: number | null; havenM: number | null }>();
+
+  constructor(
+    readonly index: FeatureIndex,
+    readonly ctx: ScoringContext,
+    period: LightPeriod,
+    /** Whether buildings are mapped well enough here to judge frontage. */
+    readonly buildingsMapped: boolean,
+  ) {
+    this.period = period;
+    this.dark = isDark(period);
+    this.weights = WEIGHTS[period];
+  }
+
+  /** Facts about one point on a known street (or the nearest mapped one). */
+  sample(point: LngLat, road?: Road | null): SampleFacts {
+    const matched = road === undefined ? (this.index.nearestRoad(point, 20) ?? this.index.nearestRoad(point, 35))?.road ?? null : road;
+    const tags = matched?.tags;
+    let lamps = 0;
+    for (const n of this.index.pois.near(point, 35)) if (n.item.kind === "lamp") lamps++;
+    const walk = walkpathScore(tags, this.dark, { stepFree: this.ctx.stepFree, heavyRain: this.ctx.heavyRain });
     const light = lightingScore(tags, lamps);
     // Fog scatters street light and hides people from view; lighting counts for less.
-    if (ctx.foggy && period !== "day") light.score = Math.round(light.score * 0.8);
-    if (tags?.highway === "steps" && road) stepWays.add(road.road.id);
+    if (this.ctx.foggy && this.period !== "day") light.score = Math.round(light.score * 0.8);
     return {
-      sample,
+      point,
+      road: matched,
       light,
       walk,
-      isolation: isolationScore(index.areasAt(sample.point), period),
-      roadMatched: !!road,
+      isolation: isolationScore(this.index.areasAt(point), this.period),
       major: !!tags?.highway && MAJOR.has(tags.highway),
       footpath: walk.score >= 80,
+      tiles: this.index.fromTiles(point),
     };
-  });
-
-  // Group samples into ~100 m segments.
-  const groups: SampleFacts[][] = [];
-  for (const f of facts) {
-    const g = Math.min(Math.floor(f.sample.at / SEGMENT_M), Math.max(0, Math.ceil(total / SEGMENT_M) - 1));
-    (groups[g] ??= []).push(f);
   }
 
-  let openPoiTotal = 0;
-  let ohKnown = 0;
-  let ohTotal = 0;
-  let nearestPolice: number | null = null;
-  const cctvSeen = new Set<string>();
-  const reportsSeen = new Set<string>();
-  const openSeen = new Set<string>();
-
-  // Building data is patchy in places: with almost none mapped along the route,
-  // treat frontage as unknown (neutral) rather than as empty land.
-  const buildingsNear = new Set<BBox>();
-  let checked = 0;
-  let alongside = 0;
-  for (let i = 0; i < samples.length; i += 3) {
-    const near = index.buildings.near(samples[i].point, 150);
-    near.forEach(({ item }) => buildingsNear.add(item));
-    checked++;
-    if (near.some(({ item }) => distanceToBBox(samples[i].point, item) <= FRONTAGE_M)) alongside++;
+  private help(center: LngLat, when: Date) {
+    // Help changes slowly with position: share it within ~150 m cells and per hour.
+    const key = `${Math.floor(center[0] / 0.0015)}:${Math.floor(center[1] / 0.0015)}:${Math.floor(when.getTime() / 3600_000)}`;
+    const hit = this.helpMemo.get(key);
+    if (hit) return hit;
+    let policeM: number | null = null;
+    let havenM: number | null = null;
+    for (const { item, distance } of this.index.pois.near(center, 2000)) {
+      if (item.kind === "police" && (policeM == null || distance < policeM)) policeM = distance;
+      if (HAVEN_KINDS.has(item.kind) && distance <= 1000 && (havenM == null || distance < havenM)) {
+        if (openProbability(this.index, item, when, this.ctx.tz).p >= 0.5) havenM = distance;
+      }
+    }
+    const out = { policeM, havenM };
+    this.helpMemo.set(key, out);
+    return out;
   }
-  // Mapped if buildings are reasonably dense, or a few large ones (a mall, a colonnade) line much of the way.
-  const buildingsMapped =
-    total > 0 && (buildingsNear.size / Math.max(0.2, total / 1000) >= MIN_BUILDINGS_PER_KM || (checked > 0 && alongside / checked >= 0.2));
 
-  const segments: ScoredSegment[] = [];
-  for (const group of groups) {
-    if (!group?.length) continue;
-    const from = group[0].sample.at;
-    const to = group.at(-1)!.sample.at;
-    const len = Math.max(SAMPLE_STEP_M, to - from + SAMPLE_STEP_M);
-    const center = group[Math.floor(group.length / 2)].sample.point;
-    const when = etaAt((from + to) / 2);
-
-    // People & open places: each place counts once per segment.
+  /** Factor scores, their plausible range and reasons for one stretch of `lengthM` metres. */
+  stretch(samples: SampleFacts[], lengthM: number, center: LngLat, when: Date): StretchResult {
+    const { index, ctx, period, dark, weights } = this;
     const nearby = new Map<string, Poi>();
-    const cctvHere = new Set<string>();
-    const reportsHere = new Map<string, CommunityReport>();
+    const cctv = new Set<string>();
+    const reports = new Map<string, CommunityReport>();
     let frontageSamples = 0;
     let transitM: number | null = null;
-    for (const f of group) {
-      for (const { item, distance } of index.pois.near(f.sample.point, 150)) {
+    for (const f of samples) {
+      for (const { item, distance } of index.pois.near(f.point, 150)) {
         if (item.kind === "transit") transitM = transitM == null ? distance : Math.min(transitM, distance);
-        if (distance <= 50 && item.kind === "cctv") cctvHere.add(item.id);
-        if (distance <= 60 && ACTIVITY_WEIGHT[item.kind] != null) nearby.set(item.id, item);
+        if (distance <= 50 && item.kind === "cctv") cctv.add(item.id);
+        if (distance <= PLACES_RADIUS_M && ACTIVITY_WEIGHT[item.kind] != null) nearby.set(item.id, item);
       }
-      for (const { item } of index.reports.near(f.sample.point, 60)) reportsHere.set(item.id, item);
-      if (index.buildings.near(f.sample.point, 150).some(({ item }) => distanceToBBox(f.sample.point, item) <= FRONTAGE_M)) frontageSamples++;
+      for (const { item } of index.reports.near(f.point, 60)) reports.set(item.id, item);
+      if (this.buildingsMapped && index.buildings.some(f.point, 150, (b) => distanceToBBox(f.point, b) <= FRONTAGE_M)) frontageSamples++;
     }
+
     let weightedOpen = 0;
+    let ohKnown = 0;
+    let ohTotal = 0;
+    const openIds: string[] = [];
     for (const poi of nearby.values()) {
       const { p, known } = openProbability(index, poi, when, ctx.tz);
       if (poi.kind !== "transit" && poi.kind !== "atm") {
         ohTotal++;
         if (known) ohKnown++;
-        if (p >= 0.5 && !openSeen.has(poi.id)) {
-          openSeen.add(poi.id);
-          openPoiTotal++;
-        }
+        if (p >= 0.5) openIds.push(poi.id);
       }
       weightedOpen += p * (ACTIVITY_WEIGHT[poi.kind] ?? 0);
     }
     if (ctx.raining && period !== "day") weightedOpen *= 0.7;
-    let activity = activityScore(weightedOpen / (len / 100));
-    const majorShare = group.filter((f) => f.major).length / group.length;
+    let activity = activityScore(weightedOpen * placesScale(lengthM));
+    const majorShare = samples.filter((f) => f.major).length / Math.max(1, samples.length);
     if (dark && majorShare > 0.5) activity = Math.min(100, activity + 8); // passing traffic adds some visibility
 
-    // Help: nearest police station and nearest open safe haven from the segment centre.
-    let policeM: number | null = null;
-    let havenM: number | null = null;
-    for (const { item, distance } of index.pois.near(center, 2000)) {
-      if (item.kind === "police" && (policeM == null || distance < policeM)) policeM = distance;
-      if (HAVEN_KINDS.has(item.kind) && distance <= 1000 && (havenM == null || distance < havenM)) {
-        if (openProbability(index, item, when, ctx.tz).p >= 0.5) havenM = distance;
-      }
-    }
-    if (policeM != null) nearestPolice = nearestPolice == null ? policeM : Math.min(nearestPolice, policeM);
-    cctvHere.forEach((id) => cctvSeen.add(id));
+    const { policeM, havenM } = this.help(center, when);
 
     let reportTotal = 0;
+    const reportIds: string[] = [];
     const reportCats = new Map<string, number>();
-    for (const r of reportsHere.values()) {
+    for (const r of reports.values()) {
       const w = reportWeight(r, when, period, ctx.tz);
       if (w !== 0) {
-        reportsSeen.add(r.id);
+        reportIds.push(r.id);
         reportTotal += w;
         if (w > 0) reportCats.set(r.category, (reportCats.get(r.category) ?? 0) + 1);
       }
     }
 
-    const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+    const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
     const factors: Record<Factor, number> = {
-      lighting: Math.round(mean(group.map((f) => f.light.score))),
+      lighting: Math.round(mean(samples.map((f) => f.light.score))),
       activity,
-      frontage: buildingsMapped ? frontageScore(frontageSamples / group.length) : 50,
-      walkpath: Math.round(mean(group.map((f) => f.walk.score))),
-      isolation: Math.round(mean(group.map((f) => f.isolation.score))),
-      help: helpScore(policeM, havenM, cctvHere.size),
+      frontage: this.buildingsMapped ? frontageScore(frontageSamples / Math.max(1, samples.length)) : 50,
+      walkpath: Math.round(mean(samples.map((f) => f.walk.score))),
+      isolation: Math.round(mean(samples.map((f) => f.isolation.score))),
+      help: helpScore(policeM, havenM, cctv.size),
       transit: transitScore(transitM),
       community: communityScore(reportTotal),
     };
 
+    // Plausible range: unmapped inputs at their worst and best.
+    const lo = { ...factors };
+    const hi = { ...factors };
+    lo.lighting = Math.round(mean(samples.map((f) => (f.light.known ? f.light.score : clamp(f.light.score - UNKNOWN_LIGHT_SPREAD, 5)))));
+    hi.lighting = Math.round(mean(samples.map((f) => (f.light.known ? f.light.score : clamp(f.light.score + UNKNOWN_LIGHT_SPREAD)))));
+    lo.walkpath = Math.round(mean(samples.map((f) => (f.walk.known ? f.walk.score : clamp(f.walk.score - UNKNOWN_WALK_SPREAD, 5)))));
+    hi.walkpath = Math.round(mean(samples.map((f) => (f.walk.known ? f.walk.score : clamp(f.walk.score + UNKNOWN_WALK_SPREAD)))));
+    if (!this.buildingsMapped) [lo.frontage, hi.frontage] = UNKNOWN_FRONTAGE;
+    if (index.placesSparse || samples.some((f) => f.tiles)) hi.activity = clamp(activity + SPARSE_PLACES_UPLIFT);
+    else if (ohTotal >= 3 && ohKnown / ohTotal < 0.3) [lo.activity, hi.activity] = [clamp(activity - 10), clamp(activity + 10)];
+
     let score = 0;
-    for (const f of FACTORS) score += factors[f] * weights[f];
+    let scoreLo = 0;
+    let scoreHi = 0;
+    for (const f of FACTORS) {
+      score += factors[f] * weights[f];
+      scoreLo += lo[f] * weights[f];
+      scoreHi += hi[f] * weights[f];
+    }
 
     const reasons: string[] = [];
     if (weights.lighting > 0 && factors.lighting < 45) {
-      const known = group.some((f) => f.light.known);
+      const known = samples.some((f) => f.light.known);
       reasons.push(ctx.foggy ? "Dim in fog" : known ? "Poorly lit stretch" : "Street lighting not mapped here");
     }
     if (factors.activity < 35) reasons.push(dark ? "Few open shops or people at this hour" : "Few shops or people around");
-    if (buildingsMapped && factors.frontage < 35) reasons.push("Few buildings facing the street");
-    const walkReason = group.find((f) => f.walk.reason)?.walk.reason;
+    if (this.buildingsMapped && factors.frontage < 35) reasons.push("Few buildings facing the street");
+    const walkReason = samples.find((f) => f.walk.reason)?.walk.reason;
     if ((factors.walkpath < 50 || (ctx.stepFree && walkReason)) && walkReason) reasons.push(walkReason);
-    const worstArea = group.find((f) => f.isolation.worst)?.isolation.worst;
+    const worstArea = samples.find((f) => f.isolation.worst)?.isolation.worst;
     if (factors.isolation < 60 && worstArea) reasons.push(`Passes ${AREA_PENALTY[worstArea].label}`);
     if (factors.help < 40) reasons.push(policeM == null ? "No police station within 2 km" : `Police station ${(policeM / 1000).toFixed(1)} km away`);
     if (factors.community < 50 && reportCats.size) {
@@ -611,60 +720,186 @@ export function scoreRoute(
       reasons.push(`Community reports: ${list.join(", ")}`);
     }
 
-    const segCoords = coordinatesBetween(coordinates, from, to + SAMPLE_STEP_M);
-    segments.push({ from, to: Math.min(total, to + SAMPLE_STEP_M), coordinates: segCoords, score: Math.round(score), factors, reasons });
+    return {
+      factors,
+      lo,
+      hi,
+      score: Math.round(score),
+      scoreLo: Math.round(scoreLo),
+      scoreHi: Math.round(scoreHi),
+      reasons,
+      openIds,
+      cctvIds: [...cctv],
+      reportIds,
+      policeM,
+      ohKnown,
+      ohTotal,
+    };
   }
+}
 
-  // Route score: length-weighted mean, pulled down by the weakest 10% of the route,
-  // because one dark, deserted stretch matters more than an average suggests.
-  const segLen = (s: ScoredSegment) => Math.max(1, s.to - s.from);
+/** Whether buildings are mapped densely enough along these points to judge frontage. */
+export function buildingsMappedAlong(index: FeatureIndex, points: LngLat[], lengthM: number): boolean {
+  const near = new Set<BBox>();
+  let checked = 0;
+  let alongside = 0;
+  for (let i = 0; i < points.length; i += 3) {
+    const p = points[i];
+    for (const { item } of index.buildings.near(p, 150)) near.add(item);
+    checked++;
+    if (index.buildings.some(p, 150, (b) => distanceToBBox(p, b) <= FRONTAGE_M)) alongside++;
+  }
+  // Mapped if buildings are reasonably dense, or a few large ones (a mall, a colonnade) line much of the way.
+  return lengthM > 0 && (near.size / Math.max(0.2, lengthM / 1000) >= MIN_BUILDINGS_PER_KM || (checked > 0 && alongside / checked >= 0.2));
+}
+
+/** Light period for a trip: taken at the midpoint time and place, so explanations stay coherent. */
+export function tripPeriod(coordinates: LngLat[], durationS: number, ctx: ScoringContext): LightPeriod {
+  const mid = coordinates[Math.floor(coordinates.length / 2)] ?? coordinates[0];
+  const midTime = new Date(ctx.departAt.getTime() + (durationS * 1000) / 2);
+  return lightPeriod(midTime, mid[1], mid[0], ctx.tz);
+}
+
+/** Route score from segments: a length-weighted mean, pulled down by the weakest 10%. */
+export function aggregate(segments: { from: number; to: number; value: number }[]): number {
+  if (!segments.length) return 0;
+  const segLen = (s: { from: number; to: number }) => Math.max(1, s.to - s.from);
   const totalLen = segments.reduce((a, s) => a + segLen(s), 0) || 1;
-  const meanScore = segments.reduce((a, s) => a + s.score * segLen(s), 0) / totalLen;
-  const sorted = [...segments].sort((a, b) => a.score - b.score);
+  const mean = segments.reduce((a, s) => a + s.value * segLen(s), 0) / totalLen;
+  const sorted = [...segments].sort((a, b) => a.value - b.value);
   let acc = 0;
-  let p10 = sorted[0]?.score ?? 0;
+  let p10 = sorted[0].value;
   for (const s of sorted) {
     acc += segLen(s);
-    p10 = s.score;
+    p10 = s.value;
     if (acc >= totalLen * 0.1) break;
   }
-  const score = segments.length ? Math.round(0.65 * meanScore + 0.35 * p10) : 0;
+  return Math.round(0.65 * mean + 0.35 * p10);
+}
 
+/** Confidence from the score's range and how much of the way is on mapped streets. */
+export function confidenceOf(width: number, matchedShare: number): ConfidenceLevel {
+  if (matchedShare < 0.6 || width >= 30) return "insufficient";
+  if (width >= 18 || matchedShare < 0.8) return "low";
+  if (width >= 9) return "medium";
+  return "high";
+}
+
+export function scoreRoute(coordinates: LngLat[], durationS: number, index: FeatureIndex, ctx: ScoringContext): RouteSafety {
+  const samples = resample(coordinates, SAMPLE_STEP_M);
+  const total = samples.at(-1)?.at ?? 0;
+  const period = tripPeriod(coordinates, durationS, ctx);
+  const buildingsMapped = buildingsMappedAlong(
+    index,
+    samples.map((s) => s.point),
+    total,
+  );
+  const ev = new StretchEvaluator(index, ctx, period, buildingsMapped);
+  const weights = ev.weights;
+  const etaAt = (at: number) => new Date(ctx.departAt.getTime() + (total > 0 ? (at / total) * durationS * 1000 : 0));
+
+  const stepWays = new Set<string>();
+  const facts = samples.map((s) => {
+    const f = ev.sample(s.point);
+    if (f.road?.tags.highway === "steps") stepWays.add(f.road.id);
+    return { at: s.at, f };
+  });
+
+  // Group samples into ~100 m segments.
+  const groups: (typeof facts)[] = [];
+  for (const x of facts) {
+    const g = Math.min(Math.floor(x.at / SEGMENT_M), Math.max(0, Math.ceil(total / SEGMENT_M) - 1));
+    (groups[g] ??= []).push(x);
+  }
+
+  let ohKnown = 0;
+  let ohTotal = 0;
+  let nearestPolice: number | null = null;
+  const cctvSeen = new Set<string>();
+  const reportsSeen = new Set<string>();
+  const openSeen = new Set<string>();
+  const segments: ScoredSegment[] = [];
+  for (const group of groups) {
+    if (!group?.length) continue;
+    const from = group[0].at;
+    const to = group.at(-1)!.at;
+    const len = Math.max(SAMPLE_STEP_M, to - from + SAMPLE_STEP_M);
+    const center = group[Math.floor(group.length / 2)].f.point;
+    const r = ev.stretch(
+      group.map((x) => x.f),
+      len,
+      center,
+      etaAt((from + to) / 2),
+    );
+    ohKnown += r.ohKnown;
+    ohTotal += r.ohTotal;
+    r.openIds.forEach((id) => openSeen.add(id));
+    r.cctvIds.forEach((id) => cctvSeen.add(id));
+    r.reportIds.forEach((id) => reportsSeen.add(id));
+    if (r.policeM != null) nearestPolice = nearestPolice == null ? r.policeM : Math.min(nearestPolice, r.policeM);
+    segments.push({
+      from,
+      to: Math.min(total, to + SAMPLE_STEP_M),
+      coordinates: coordinatesBetween(coordinates, from, to + SAMPLE_STEP_M),
+      score: r.score,
+      lo: r.scoreLo,
+      hi: r.scoreHi,
+      factors: r.factors,
+      reasons: r.reasons,
+    });
+  }
+
+  const score = aggregate(segments.map((s) => ({ from: s.from, to: s.to, value: s.score })));
+  const lo = Math.min(score, aggregate(segments.map((s) => ({ from: s.from, to: s.to, value: s.lo ?? s.score }))));
+  const hi = Math.max(score, aggregate(segments.map((s) => ({ from: s.from, to: s.to, value: s.hi ?? s.score }))));
+
+  const segLen = (s: ScoredSegment) => Math.max(1, s.to - s.from);
+  const totalLen = segments.reduce((a, s) => a + segLen(s), 0) || 1;
   const factorAvg = {} as Record<Factor, number>;
   for (const f of FACTORS) factorAvg[f] = Math.round(segments.reduce((a, s) => a + s.factors[f] * segLen(s), 0) / totalLen);
 
-  const litKnown = facts.filter((f) => f.light.known);
+  const all = facts.map((x) => x.f);
+  const litKnown = all.filter((f) => f.light.known);
   const litShare = litKnown.length ? litKnown.filter((f) => f.light.score >= 75).length / litKnown.length : null;
-  const footpathShare = facts.length ? facts.filter((f) => f.footpath).length / facts.length : 0;
+  const footpathShare = all.length ? all.filter((f) => f.footpath).length / all.length : 0;
+  const matchedShare = all.length ? all.filter((f) => f.road).length / all.length : 0;
+  const tilesShare = all.length ? all.filter((f) => f.tiles).length / all.length : 0;
 
-  const coverageParts: number[] = [facts.length ? facts.filter((f) => f.roadMatched).length / facts.length : 0];
   const notes: string[] = [];
+  if (matchedShare < 0.8) notes.push(`Only ${Math.round(matchedShare * 100)}% of this route follows mapped streets or paths.`);
   if (weights.lighting > 0) {
-    const share = facts.length ? litKnown.length / facts.length : 0;
-    coverageParts.push(share);
-    if (share < 0.3) notes.push("Street lighting is mapped for little of this route, so lighting is estimated from road type.");
+    const share = all.length ? litKnown.length / all.length : 0;
+    if (share < 0.3) notes.push(`Street lighting is mapped for ${share < 0.05 ? "almost none" : `only ${Math.round(share * 100)}%`} of this route, so lighting is estimated from road type.`);
   }
-  const majorFacts = facts.filter((f) => f.major);
-  if (majorFacts.length) {
-    const known = majorFacts.filter((f) => f.walk.known).length / majorFacts.length;
-    coverageParts.push(known);
-    if (known < 0.3) notes.push("Footpaths along main roads are mostly unmapped here.");
-  }
-  if (ohTotal) {
-    coverageParts.push(ohKnown / ohTotal);
-    if (ohKnown / ohTotal < 0.3) notes.push("Few places list opening hours; open/closed is estimated from typical hours.");
-  }
+  const majorFacts = all.filter((f) => f.major);
+  if (majorFacts.length && majorFacts.filter((f) => f.walk.known).length / majorFacts.length < 0.3) notes.push("Footpaths along main roads are mostly unmapped here.");
+  if (ohTotal && ohKnown / ohTotal < 0.3) notes.push("Few places list opening hours; open/closed is estimated from typical hours.");
+  if (index.placesSparse) notes.push("Shops and eateries look under-mapped in this area, so there may be more people around than counted.");
   if (!buildingsMapped) notes.push("Buildings are barely mapped along this route, so frontage is not judged.");
-  if (index.source === "tiles") {
-    notes.push("Live street details (street lamps, footpath tags, opening hours) were unavailable, so this uses the map's base data and typical opening hours.");
-    coverageParts.push(0.2);
+  if (tilesShare > 0.2) {
+    notes.push(
+      tilesShare > 0.95
+        ? "Detailed street data (street lamps, footpaths, opening hours) was unavailable, so this uses the map's base data and typical opening hours."
+        : `Detailed street data was unavailable for ${Math.round(tilesShare * 100)}% of this route; that part uses the map's base data.`,
+    );
   }
-  const coverage = coverageParts.reduce((a, b) => a + b, 0) / coverageParts.length;
+
+  const width = hi - lo;
+  const level = confidenceOf(width, matchedShare);
+  if (level === "insufficient") {
+    notes.unshift(
+      matchedShare < 0.6
+        ? "Too little of this route is on mapped streets to score it reliably."
+        : `Too much of this route is unmapped to give a reliable score: it could be anywhere from ${lo} to ${hi}.`,
+    );
+  }
 
   const highlights: string[] = [];
-  if (weights.lighting > 0 && litShare != null && litShare >= 0.6) highlights.push(`${Math.round(litShare * 100)}% of mapped stretches are lit`);
+  if (weights.lighting > 0 && litShare != null && litShare >= 0.6 && litKnown.length / Math.max(1, all.length) >= 0.3) {
+    highlights.push(`${Math.round(litShare * 100)}% of mapped stretches are lit`);
+  }
   if (footpathShare >= 0.5) highlights.push(`Footpath or pedestrian way for ${Math.round(footpathShare * 100)}% of the walk`);
-  if (openPoiTotal >= 5) highlights.push(`${openPoiTotal} shops and places likely open along the way`);
+  if (openSeen.size >= 5) highlights.push(`${openSeen.size} shops and places likely open along the way`);
   if (nearestPolice != null && nearestPolice <= 500) highlights.push(`Police station ${Math.round(nearestPolice)} m from the route`);
   if (buildingsMapped && factorAvg.frontage >= 75) highlights.push("Homes and shops line most of the way");
   if (cctvSeen.size) highlights.push(`${cctvSeen.size} mapped CCTV camera${cctvSeen.size > 1 ? "s" : ""}`);
@@ -678,15 +913,19 @@ export function scoreRoute(
     segments,
     weakStretches: findWeakStretches(segments),
     highlights,
-    confidence: { level: coverage >= 0.6 ? "high" : coverage >= 0.3 ? "medium" : "low", coverage: Math.round(coverage * 100) / 100, notes },
+    confidence: { level, coverage: Math.round(clamp(1 - width / 40, 0, 1) * matchedShare * 100) / 100, notes },
+    range: { lo, hi },
+    conservative: Math.round((score + lo) / 2),
     stats: {
       litShare: litShare == null ? null : Math.round(litShare * 100) / 100,
       footpathShare: Math.round(footpathShare * 100) / 100,
-      openPlaces: openPoiTotal,
+      openPlaces: openSeen.size,
       nearestPoliceM: nearestPolice == null ? null : Math.round(nearestPolice),
       cctv: cctvSeen.size,
       reportsNearby: reportsSeen.size,
       steps: stepWays.size,
+      matchedShare: Math.round(matchedShare * 100) / 100,
+      tilesShare: Math.round(tilesShare * 100) / 100,
     },
   };
 }

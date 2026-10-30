@@ -20,8 +20,18 @@ export interface MapMarker {
   label?: string;
 }
 
+/** A shaded circle, e.g. a block of a neighbourhood coloured by its safety score (grey when unscored). */
+export interface MapZone {
+  id: string;
+  point: LngLat;
+  radiusM: number;
+  score: number | null;
+  label?: string;
+}
+
 interface Props {
   routes?: MapRoute[];
+  zones?: MapZone[];
   selectedId?: string | null;
   onSelectRoute?: (id: string) => void;
   user?: { point: LngLat; accuracy?: number } | null;
@@ -81,6 +91,7 @@ const emptyFC = (): GeoJSON.FeatureCollection => ({ type: "FeatureCollection", f
 
 export default function MapView({
   routes = [],
+  zones = [],
   selectedId,
   onSelectRoute,
   user,
@@ -123,6 +134,25 @@ export default function MapView({
 
     const setup = () => {
       if (map.getSource("routes")) return;
+      map.addSource("zones", { type: "geojson", data: emptyFC() });
+      map.addLayer({
+        id: "zones",
+        type: "circle",
+        source: "zones",
+        paint: {
+          // Radius in metres: pixels per metre doubles with each zoom level.
+          "circle-radius": ["interpolate", ["exponential", 2], ["zoom"], 10, ["get", "px10"], 20, ["get", "px20"]],
+          "circle-color": ["get", "color"],
+          "circle-opacity": 0.3,
+          "circle-stroke-color": ["get", "color"],
+          "circle-stroke-width": 1,
+          "circle-stroke-opacity": 0.5,
+        },
+      });
+      map.on("click", "zones", (e) => {
+        const label = e.features?.[0]?.properties?.label;
+        if (label) new maplibregl.Popup({ closeButton: false, offset: 6 }).setLngLat(e.lngLat).setText(String(label)).addTo(map);
+      });
       map.addSource("routes", { type: "geojson", data: emptyFC() });
       map.addSource("segments", { type: "geojson", data: emptyFC() });
       map.addSource("trail", { type: "geojson", data: emptyFC() });
@@ -244,6 +274,22 @@ export default function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
+    (map.getSource("zones") as GeoJSONSource | undefined)?.setData({
+      type: "FeatureCollection",
+      features: zones.map((z) => {
+        const cos = Math.cos((z.point[1] * Math.PI) / 180);
+        return {
+          type: "Feature",
+          properties: { id: z.id, label: z.label ?? "", color: z.score == null ? "#94a3b8" : scoreColor(z.score), px10: z.radiusM / (152.87 * cos), px20: z.radiusM / (0.14929 * cos) },
+          geometry: { type: "Point", coordinates: z.point },
+        };
+      }),
+    });
+  }, [zones, ready, styleVersion]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
     (map.getSource("trail") as GeoJSONSource).setData(
       trail && trail.length > 1
         ? { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: trail } }
@@ -284,7 +330,7 @@ export default function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const pts: LngLat[] = [...routes.flatMap((r) => r.coordinates), ...markers.map((m) => m.point), ...(trail ?? [])];
+    const pts: LngLat[] = [...routes.flatMap((r) => r.coordinates), ...markers.map((m) => m.point), ...zones.map((z) => z.point), ...(trail ?? [])];
     if (user) pts.push(user.point);
     if (!pts.length) return;
     if (pts.length === 1) {

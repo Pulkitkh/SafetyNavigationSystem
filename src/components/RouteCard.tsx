@@ -1,6 +1,6 @@
 "use client";
 
-import { Accessibility, Building2, Cctv, Check, ChevronDown, Footprints, Info, Lightbulb, Shield, Store, TriangleAlert, Users, type LucideIcon } from "lucide-react";
+import { Accessibility, Building2, Cctv, Check, ChevronDown, Footprints, Info, Lightbulb, Route, Shield, Store, TriangleAlert, Users, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { Badge, ScoreRing } from "@/components/ui";
 import { formatDistance, formatDuration } from "@/lib/client/api";
@@ -21,6 +21,19 @@ const BAND = {
 } as const;
 
 const TAG_TEXT = { recommended: "Recommended", safest: "Safest", fastest: "Fastest" } as const;
+
+const CONFIDENCE_TEXT = { high: "Well mapped", medium: "Partly mapped", low: "Thinly mapped", insufficient: "Not enough map data" } as const;
+
+/** "4 min longer than the fastest, avoids a poorly lit stretch". */
+function comparisonText(route: PlannedRoute): string | null {
+  const c = route.vsFastest;
+  if (!c || route.tags.includes("fastest")) return null;
+  const mins = Math.round(c.extraS / 60);
+  const time = mins > 0 ? `${mins} min longer than the fastest` : mins < 0 ? `${-mins} min quicker than the fastest` : "About as quick as the fastest";
+  const safer = c.gain >= 3 ? `, ${c.gain} points safer` : c.gain <= -3 ? `, ${-c.gain} points less safe` : "";
+  const avoids = c.avoids.length && c.gain > 0 ? `. Avoids: ${c.avoids.map((a) => a.toLowerCase()).join("; ")}` : "";
+  return `${time}${safer}${avoids}`;
+}
 
 /** Kept for pages that still import the old name. */
 export const ScoreBadge = ScoreRing;
@@ -52,28 +65,42 @@ export function RouteCard({
 }) {
   const s = route.safety;
   const [why, setWhy] = useState(false);
+  const insufficient = s?.confidence.level === "insufficient";
+  const comparison = comparisonText(route);
   return (
     <article className={`card overflow-hidden transition-shadow ${selected ? "ring-2 ring-brand" : ""}`} aria-current={selected ? "true" : undefined}>
       <button onClick={onSelect} className="tap flex w-full items-center gap-3.5 p-4 text-left" aria-expanded={selected}>
-        <ScoreRing score={s?.score ?? null} size={60} />
+        <ScoreRing score={s?.score ?? null} size={60} unknown={insufficient} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2">
             <span className="text-xl font-extrabold text-ink">{formatDuration(route.duration)}</span>
             <span className="text-sm font-medium text-ink-2">{formatDistance(route.distance)}</span>
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {s && <Badge tone={BAND[s.band].tone}>{BAND[s.band].text}</Badge>}
+            {s && !insufficient && <Badge tone={BAND[s.band].tone}>{BAND[s.band].text}</Badge>}
+            {insufficient && <Badge tone="caution">Not enough map data</Badge>}
             {route.tags.map((t) => (
               <Badge key={t} tone={t === "recommended" ? "brand" : "neutral"}>
                 {TAG_TEXT[t]}
               </Badge>
             ))}
+            {route.source === "safety" && (
+              <Badge tone="good" icon={Route}>
+                Found by safety search
+              </Badge>
+            )}
             {stepFree && s && (
               <Badge tone={s.stats.steps ? "caution" : "brand"} icon={Accessibility}>
                 {s.stats.steps ? `${s.stats.steps} flight${s.stats.steps > 1 ? "s" : ""} of steps` : "No mapped steps"}
               </Badge>
             )}
           </div>
+          {s && !insufficient && s.range.hi - s.range.lo >= 6 && (
+            <p className="mt-1.5 text-[13px] text-ink-2">
+              Likely {s.range.lo}–{s.range.hi} · {CONFIDENCE_TEXT[s.confidence.level].toLowerCase()}
+            </p>
+          )}
+          {comparison && <p className="mt-1 text-[13px] font-semibold text-ink">{comparison}</p>}
         </div>
         <ChevronDown className={`h-5 w-5 shrink-0 text-ink-3 transition-transform ${selected ? "rotate-180" : ""}`} aria-hidden />
       </button>
@@ -144,11 +171,11 @@ export function RouteCard({
             </div>
           )}
 
-          <div className={`flex gap-2.5 rounded-2xl p-3 text-[13px] ${s.confidence.level === "low" ? "bg-caution-soft text-ink" : "bg-surface-2 text-ink-2"}`}>
-            <Info className={`mt-0.5 h-4 w-4 shrink-0 ${s.confidence.level === "low" ? "text-caution" : "text-ink-3"}`} aria-hidden />
+          <div className={`flex gap-2.5 rounded-2xl p-3 text-[13px] ${s.confidence.level === "low" || insufficient ? "bg-caution-soft text-ink" : "bg-surface-2 text-ink-2"}`}>
+            <Info className={`mt-0.5 h-4 w-4 shrink-0 ${s.confidence.level === "low" || insufficient ? "text-caution" : "text-ink-3"}`} aria-hidden />
             <div>
               <p className="font-bold">
-                Map data confidence: {s.confidence.level} ({Math.round(s.confidence.coverage * 100)}%)
+                {CONFIDENCE_TEXT[s.confidence.level]}: score {insufficient ? "withheld" : s.score}, plausible range {s.range.lo}–{s.range.hi}
               </p>
               {s.confidence.notes.map((n) => (
                 <p key={n} className="mt-0.5">

@@ -9,7 +9,7 @@
  */
 import { VectorTile, type VectorTileFeature } from "@mapbox/vector-tile";
 import { PbfReader } from "pbf";
-import type { BBox, LngLat } from "@/lib/geo";
+import { inBBox, type BBox, type LngLat } from "@/lib/geo";
 import { cached, fetchJson, UpstreamError, userAgent } from "./http";
 import { classifyArea, classifyPoi, type Area, type OsmFeatures, type Poi, type Road } from "./overpass";
 
@@ -35,6 +35,14 @@ function tilePointToLngLat(z: number, x: number, y: number, extent: number, px: 
   const merc = Math.PI * (1 - (2 * (y + py / extent)) / n);
   const lat = (Math.atan(Math.sinh(merc)) * 180) / Math.PI;
   return [Math.round(lng * 1e6) / 1e6, Math.round(lat * 1e6) / 1e6];
+}
+
+/** A tile's bounds in degrees. */
+export function tileBounds(z: number, x: number, y: number): BBox {
+  const n = 2 ** z;
+  const lng = (v: number) => (v / n) * 360 - 180;
+  const lat = (v: number) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * v) / n))) * 180) / Math.PI;
+  return { minLng: lng(x), maxLng: lng(x + 1), minLat: lat(y + 1), maxLat: lat(y) };
 }
 
 /** Tiles touched by `points`, each widened by `bufferM` metres in every direction. */
@@ -122,6 +130,7 @@ export function roadTags(p: Record<string, unknown>): Record<string, string> | n
   if (p.surface === "unpaved") tags.surface = "unpaved";
   if (typeof p.service === "string" && p.service) tags.service = p.service;
   if (p.access === "no" || p.access === "private") tags.access = String(p.access);
+  if (p.layer != null && p.layer !== 0) tags.layer = String(p.layer);
   return tags;
 }
 
@@ -280,4 +289,55 @@ export async function fetchTileFeatures(points: LngLat[], nearM = 400, helpM = 1
   const help = tilesAround(points, helpM).filter((k) => !near.includes(k)).slice(0, Math.max(0, MAX_TILES - near.length));
   const [a, b] = await Promise.all([mapLimit(near, 6, (k) => loadTile(template, k)), mapLimit(help, 6, (k) => loadTile(template, k).catch(() => null))]);
   return mergeTiles(a, b.filter((t): t is TileFeatures => !!t));
+}
+
+function padBox(b: BBox, m: number): BBox {
+  const dLat = m / 111_320;
+  const dLng = m / (111_320 * Math.cos((((b.minLat + b.maxLat) / 2) * Math.PI) / 180));
+  return { minLng: b.minLng - dLng, maxLng: b.maxLng + dLng, minLat: b.minLat - dLat, maxLat: b.maxLat + dLat };
+}
+
+const overlaps = (a: BBox, b: BBox) => a.minLng <= b.maxLng && a.maxLng >= b.minLng && a.minLat <= b.maxLat && a.maxLat >= b.minLat;
+
+function boundsOf(points: LngLat[]): BBox {
+  let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+  for (const [lng, lat] of points) {
+    if (lng < minLng) minLng = lng;
+    if (lng > maxLng) maxLng = lng;
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+  }
+  return { minLng, minLat, maxLng, maxLat };
+}
+
+/**
+ * Street features from vector tiles, limited to what lies in `boxes` (plus a
+ * small margin): fills map cells that Overpass couldn't supply, without
+ * duplicating the cells it did.
+ */
+export async function tileFeaturesWithin(boxes: BBox[]): Promise<OsmFeatures> {
+  if (!boxes.length) return { roads: [], pois: [], areas: [], buildings: [], source: "tiles" };
+  const template = await tileUrlTemplate();
+  const keys = new Set<string>();
+  for (const b of boxes) {
+    const [x0, y0] = lngLatToTile(b.minLng, b.maxLat);
+    const [x1, y1] = lngLatToTile(b.maxLng, b.minLat);
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) keys.add(`${x}/${y}`);
+  }
+  if (keys.size > MAX_TILES * 2) throw new UpstreamError("map tiles: area too large", "map tiles");
+  const parts = await mapLimit([...keys], 6, (k) => loadTile(template, k));
+  const merged = mergeTiles(parts);
+  const padded = boxes.map((b) => padBox(b, 40));
+  const inside = (p: LngLat) => padded.some((b) => inBBox(p, b));
+  const touches = (pts: LngLat[]) => {
+    const bb = boundsOf(pts);
+    return padded.some((b) => overlaps(bb, b));
+  };
+  return {
+    roads: merged.roads.filter((r) => touches(r.geometry)),
+    pois: merged.pois.filter((p) => inside(p.point)),
+    areas: merged.areas.filter((a) => touches(a.ring)),
+    buildings: (merged.buildings ?? []).filter((b) => padded.some((x) => overlaps(b, x))),
+    source: "tiles",
+  };
 }

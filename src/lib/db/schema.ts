@@ -278,6 +278,24 @@ export const sosResponses = safenav.table(
   (t) => [primaryKey({ columns: [t.tripId, t.contactId] })],
 );
 
+/**
+ * OpenStreetMap street data in fixed map cells (zoom-15 tiles, about 1.1 km
+ * across in India), fetched once from Overpass and shared by every request:
+ * roads with their lighting and footpath tags, places with opening hours,
+ * land use and building outlines. Stored gzip-compressed (see cells.ts).
+ */
+export const osmCells = safenav.table(
+  "osm_cells",
+  {
+    key: text("key").primaryKey(), // "<layer>:<z>/<x>/<y>"
+    data: text("data").notNull(),
+    bytes: integer("bytes").notNull(),
+    fetchedAt: ts("fetched_at").notNull(),
+    usedAt: ts("used_at").notNull().defaultNow(),
+  },
+  (t) => [index("osm_cells_used_idx").on(t.usedAt)],
+);
+
 // Shared response cache for slow public APIs (Overpass, routing, geocoding).
 export const apiCache = safenav.table("api_cache", {
   key: text("key").primaryKey(),

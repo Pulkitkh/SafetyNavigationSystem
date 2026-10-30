@@ -94,9 +94,9 @@ describe("route candidates", () => {
   const a: LngLat = [75.86, 22.72];
   const b = destinationPoint(a, 0, 2000);
 
-  it("creates via-points on both sides for longer walks only", () => {
+  it("creates via-points on both sides, at two distances, for longer walks only", () => {
     expect(viaPoints(a, destinationPoint(a, 0, 300))).toHaveLength(0);
-    expect(viaPoints(a, b)).toHaveLength(2);
+    expect(viaPoints(a, b)).toHaveLength(4);
   });
 
   it("drops near-identical routes", () => {
@@ -113,7 +113,7 @@ describe("route candidates", () => {
       duration,
       steps: [],
       tags: [],
-      safety: { score } as PlannedRoute["safety"],
+      safety: { score, conservative: score, confidence: { level: "high" }, weakStretches: [], stats: { steps: 0 } } as unknown as PlannedRoute["safety"],
     });
     const ranked = rankRoutes([mk("fast", 600, 60), mk("safe", 700, 80)]);
     expect(ranked[0].id).toBe("safe");
@@ -132,7 +132,7 @@ describe("route candidates", () => {
       duration,
       steps: [],
       tags: [],
-      safety: { score, stats: { steps } } as PlannedRoute["safety"],
+      safety: { score, conservative: score, confidence: { level: "high" }, weakStretches: [], stats: { steps } } as unknown as PlannedRoute["safety"],
     });
     const ranked = rankRoutes([mk("stairs", 600, 85, 2), mk("ramp", 800, 70, 0), mk("other", 700, 60, 1)], { stepFree: true });
     // The usable route leads; the rest follow by safety.

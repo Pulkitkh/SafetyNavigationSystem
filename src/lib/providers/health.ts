@@ -34,7 +34,8 @@ export async function checkUpstreams(): Promise<ProbeResult[]> {
   for (const base of endpoints(process.env.VALHALLA_URL, ["https://valhalla1.openstreetmap.de"])) {
     if (base !== "off") probes.push(probe("routing fallback (Valhalla)", `${base}/status`));
   }
-  for (const url of endpoints(process.env.OVERPASS_URL, OVERPASS_MIRRORS)) probes.push(probe("street data (Overpass)", url.replace(/\/interpreter$/, "/status")));
+  // A tiny real query: some instances refuse the /status page to clients they serve queries to.
+  for (const url of endpoints(process.env.OVERPASS_URL, OVERPASS_MIRRORS)) probes.push(probe("street data (Overpass)", `${url}?data=${encodeURIComponent("[out:json][timeout:5];node(1);out ids;")}`));
   probes.push(probe("street data (map tiles)", process.env.TILES_TILEJSON_URL || "https://tiles.openfreemap.org/planet"));
   probes.push(probe("place search (Photon)", `${process.env.PHOTON_URL || "https://photon.komoot.io"}/api/?q=delhi&limit=1`));
   probes.push(probe("reverse geocoding (Nominatim)", `${process.env.NOMINATIM_URL || "https://nominatim.openstreetmap.org"}/status?format=json`));

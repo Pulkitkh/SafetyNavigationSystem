@@ -9,4 +9,4 @@ const Map = dynamic(() => import("./MapView"), {
 });
 
 export default Map;
-export type { MapRoute, MapMarker } from "./MapView";
+export type { MapRoute, MapMarker, MapZone } from "./MapView";
