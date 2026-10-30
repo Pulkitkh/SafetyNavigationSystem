@@ -87,7 +87,8 @@ run("API end to end", () => {
   });
 
   it("files reports, hides your own from voting, and lets others confirm", async () => {
-    const rep = await asha.call("/api/reports", { method: "POST", json: { category: "poor_lighting", lat: 22.72, lng: 75.86, note: "Lights out near the underpass" } });
+    // Filed at Point Nemo, the farthest point from land, so a run against a live server never affects a real street's score.
+    const rep = await asha.call("/api/reports", { method: "POST", json: { category: "poor_lighting", lat: -48.876, lng: -123.393, note: "E2E test report" } });
     expect(rep.status).toBe(201);
     expect(rep.body.report).not.toHaveProperty("userId");
     const id = rep.body.report.id;
@@ -96,9 +97,9 @@ run("API end to end", () => {
     expect(vote.body).toMatchObject({ upvotes: 1, flags: 0 });
     const again = await ravi.call(`/api/reports/${id}/vote`, { method: "POST", json: { value: 1 } });
     expect(again.body.upvotes).toBe(1);
-    const list = await ravi.call("/api/reports?bbox=75.85,22.71,75.87,22.73");
+    const list = await ravi.call("/api/reports?bbox=-123.4,-48.88,-123.38,-48.87");
     expect(list.body.reports.some((r: { id: string }) => r.id === id)).toBe(true);
-    const badCat = await asha.call("/api/reports", { method: "POST", json: { category: "aliens", lat: 22.72, lng: 75.86 } });
+    const badCat = await asha.call("/api/reports", { method: "POST", json: { category: "aliens", lat: -48.876, lng: -123.393 } });
     expect(badCat.status).toBe(400);
   });
 

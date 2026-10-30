@@ -119,7 +119,8 @@ function bboxParam(b: BBox) {
 
 /** Everything the safety model reads, for one cell. */
 export function buildCellQuery(b: BBox): string {
-  return `[out:json][timeout:50][maxsize:268435456][bbox:${bboxParam(b)}];
+  // A modest timeout and memory reservation: Overpass admits smaller requests sooner when it is busy.
+  return `[out:json][timeout:40][maxsize:134217728][bbox:${bboxParam(b)}];
 way[highway];
 out tags geom qt;
 (
