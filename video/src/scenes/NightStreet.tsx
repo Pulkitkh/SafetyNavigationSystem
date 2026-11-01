@@ -120,9 +120,9 @@ function Lamps({ offset, frame }: { offset: number; frame: number }) {
 }
 
 /** Scene 1: 10 pm, Priya walks home past shuttered shops and uneven street lights. */
-export function NightStreet({ dur }: { dur: number }) {
+export function NightStreet({ dur, speed = 1 }: { dur: number; speed?: number }) {
   const frame = useT();
-  const walked = frame * 3.2; // px per frame at street level
+  const walked = frame * 3.2 * speed; // px per frame at street level
   const push = interpolate(frame, [0, dur], [1, 1.07], { easing: EASE_IN_OUT });
   return (
     <AbsoluteFill style={{ background: `linear-gradient(${C.skyTop} 0%, #110d2b 55%, ${C.skyBottom} 78%)`, overflow: "hidden" }}>
@@ -154,7 +154,7 @@ export function NightStreet({ dur }: { dur: number }) {
         })}
         {/* Priya */}
         <div style={{ position: "absolute", left: 330, top: GROUND - 640 + 20, width: 252, height: 640 }}>
-          <Priya phase={(frame / 34) * 2 * Math.PI} />
+          <Priya phase={((frame * speed) / 34) * 2 * Math.PI} />
         </div>
         {/* Her shadow on the pavement */}
         <div style={{ position: "absolute", left: 370, top: GROUND + 14, width: 230, height: 22, borderRadius: "50%", background: "rgba(0,0,0,0.55)", filter: "blur(6px)" }} />

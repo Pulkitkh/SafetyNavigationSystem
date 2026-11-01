@@ -11,7 +11,7 @@ Everything here is cleared for commercial posting without attribution. The sourc
 | File | Source | Licence |
 | --- | --- | --- |
 | `bgm/house-vibez.mp3` | *House Vibez* by Lily J, https://assets.mixkit.co/music/745/745.mp3 | Mixkit Free License |
-| `bgm/night-ambience.wav` | Synthesized for this video (filtered noise, distant traffic hum) | Own work |
+| `bgm/tension-pad.wav` | Synthesized for this video (sine chords) | Own work |
 
 ## Sound effects
 

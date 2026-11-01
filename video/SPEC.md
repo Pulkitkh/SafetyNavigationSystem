@@ -20,7 +20,7 @@ The first video in SafeNav's social series: what the problem is, what SafeNav do
 | Claims about the app | Only what it does today: street-by-street checks, safety search, live following, check-ins, SOS with live location, "reached safely" text, free in the browser and on Android | The video must not promise features that aren't live (no "rings on silent": Firebase isn't configured) |
 | App footage | Real screens: production planner for the routes (Indore, Rajwada → Palasia Square, at 10 pm), local server for the signed-in flows with fictional people (Priya Sharma, Sunita "Maa" Sharma) | Q1: real pages, no personal data |
 | Captions | Burned in, phrase by phrase, top third, ≥ 60 px | Most social video is watched muted; the bottom of the frame is covered by platform UI |
-| Music | Problem section: a synthesized night ambience (no beat), heartbeat on the facts. From the reveal: *House Vibez* (Lily J, Mixkit free licence), starting on a kick exactly at the logo impact, kept low under the voice | A beat under the problem would trivialise it; the music arriving with SafeNav is the turn of the story |
+| Music | Hook and problem section: a clean synthesized pad (pure tones, no noise; the earlier street ambience read as hiss), heartbeat on the facts. From the reveal: *House Vibez* (Lily J, Mixkit free licence), starting on a kick exactly at the logo impact, kept low under the voice | A beat under the problem would trivialise it; the music arriving with SafeNav is the turn of the story |
 | Beat sync | Deliberately loose: cuts follow the narration, only the logo impact sits on a kick | A narration-led film where the music is a bed; strict beat cuts would fight the voice (deviation from the skill's rule 5, noted here) |
 | Effects | Mixkit-licensed effects with traceable sources only; the riser is synthesized | Clean for commercial posting |
 
@@ -32,7 +32,22 @@ The first video in SafeNav's social series: what the problem is, what SafeNav do
 - States: safe `#0f7a55` / `#4ade9b`, caution `#fbbf4a`, SOS `#e11d48`; lamp light `#ffcf7a`.
 - Motion: calm and caring in the problem section (≈40 f moves, symmetric ease); trustworthy and lightly lively after the reveal (≈24 f entrances, `bezier(0.25,0.46,0.45,0.94)`, overshoot ≤ 1.06 only on chips that "pop"). No handheld shake (Q3).
 
-## Storyboard (seconds)
+## Hook (added after the first cut)
+
+Reels viewers decide in the first 1–3 s, so the video now opens on text and voice from frame 0, calling out who it is for and the problem: six hard cuts, one per line.
+
+| Time | Line | Picture |
+| --- | --- | --- |
+| 0.0 | Keys between your fingers. | Keys swing in close-up, bass hit on frame 0 |
+| 1.5 | A fake phone call. | Phone ringing ("Papa") |
+| 2.7 | Walking a little faster. | Priya walks at nearly double pace |
+| 4.05 | "Text me when you reach." | Maa's message lands |
+| 5.3 | If you're a woman, you know this routine. | The four habits as tiles, each ticked |
+| 7.7 | You shouldn't have to. | Black, big type; then the story begins |
+
+The routine scene (old 6.6–12.7 s) is gone, since the hook covers it. Everything after the night street keeps its timing, shifted by 3.3 s (`HOOK`, `SHIFT_F` in `timeline.ts`). The outro closes with a share prompt that echoes the hook ("Send this to someone who always texts 'reached'") and "Follow for part 2".
+
+## Storyboard (seconds, before the hook shift)
 
 | # | Time | Scene | Key motion |
 | --- | --- | --- | --- |

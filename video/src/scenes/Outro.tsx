@@ -27,6 +27,7 @@ export function Outro() {
   const g2 = interpolate(t, [NIGHT - 2, NIGHT + 14], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: EASE });
   const url = interpolate(t, [ANDROID + 14, ANDROID + 28], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: EASE });
   const follow = interpolate(t, [NIGHT + 30, NIGHT + 44], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: EASE });
+  const follow2 = interpolate(t, [NIGHT + 44, NIGHT + 58], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: EASE });
   const breathe = 1 + 0.015 * Math.sin(t / 20);
   return (
     <AbsoluteFill style={{ background: `radial-gradient(ellipse 90% 60% at 50% 45%, #2a1d6e 0%, ${C.canvas} 70%)`, fontFamily: FONT, overflow: "hidden" }}>
@@ -46,11 +47,15 @@ export function Outro() {
         <div style={{ color: C.ink, opacity: g1, transform: `translateY(${(1 - g1) * 30}px)` }}>Get home safe.</div>
         <div style={{ color: C.brandInk, opacity: g2, transform: `translateY(${(1 - g2) * 30}px)` }}>Every night.</div>
       </div>
-      <div style={{ position: "absolute", left: 0, right: 0, top: 1330, display: "flex", justifyContent: "center", opacity: url, transform: `translateY(${(1 - url) * 20}px)` }}>
+      <div style={{ position: "absolute", left: 0, right: 0, top: 1300, display: "flex", justifyContent: "center", opacity: url, transform: `translateY(${(1 - url) * 20}px)` }}>
         <div style={{ padding: "22px 40px", borderRadius: 999, background: "rgba(124,92,255,0.18)", boxShadow: "0 0 0 2px rgba(178,165,255,0.5)", color: C.ink, fontSize: 44, fontWeight: 700 }}>safenav-0ywr.onrender.com</div>
       </div>
-      <div style={{ position: "absolute", left: 0, right: 0, top: 1460, textAlign: "center", color: C.ink2, fontSize: 38, fontWeight: 700, opacity: follow }}>
-        Follow for more  →
+      {/* Engagement: a share prompt that echoes the hook, and the series */}
+      <div style={{ position: "absolute", left: 80, right: 80, top: 1440, textAlign: "center", color: C.ink, fontSize: 40, fontWeight: 700, lineHeight: 1.25, opacity: follow, transform: `translateY(${(1 - follow) * 16}px)` }}>
+        Send this to someone who always texts <span style={{ color: C.brandInk }}>&ldquo;reached&rdquo;</span>
+      </div>
+      <div style={{ position: "absolute", left: 0, right: 0, top: 1560, textAlign: "center", color: C.ink3, fontSize: 34, fontWeight: 700, opacity: follow2 }}>
+        Follow for part 2  →
       </div>
     </AbsoluteFill>
   );

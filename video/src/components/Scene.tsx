@@ -26,3 +26,9 @@ export function Scene({ k, children, fadeIn = 8, tail = 10 }: { k: SceneKey; chi
     </SceneT.Provider>
   );
 }
+
+/** Re-bases scene time for a part of a scene, so the part can count from its own start. */
+export function At({ from, children }: { from: number; children: ReactNode }) {
+  const t = useT();
+  return <SceneT.Provider value={t - from}>{children}</SceneT.Provider>;
+}

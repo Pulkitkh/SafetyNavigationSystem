@@ -6,13 +6,13 @@ import { Checks } from "./scenes/Checks";
 import { DayNight } from "./scenes/DayNight";
 import { Fastest } from "./scenes/Fastest";
 import { Home } from "./scenes/Home";
+import { Hook } from "./scenes/Hook";
 import { Live } from "./scenes/Live";
 import { NightStreet } from "./scenes/NightStreet";
 import { Numbers } from "./scenes/Numbers";
 import { Outro } from "./scenes/Outro";
 import { Plan } from "./scenes/Plan";
 import { Reveal } from "./scenes/Reveal";
-import { Routine } from "./scenes/Routine";
 import { Safest } from "./scenes/Safest";
 import { Sos } from "./scenes/Sos";
 import { Sound } from "./Sound";
@@ -22,15 +22,15 @@ import { sceneFrames } from "./timeline";
 loadFont();
 
 // Lines whose words are already on screen as big type: no caption on top.
-const NO_CAPTION = new Set(["l07", "l08", "l16", "l17"]);
+const NO_CAPTION = new Set(["h01", "h02", "h03", "h04", "h05", "h06", "l07", "l08", "l16", "l17"]);
 
 export const Main = ({ bgm }: { bgm: boolean }) => (
   <AbsoluteFill style={{ background: C.canvas }}>
-    <Scene k="night" fadeIn={0}>
-      <NightStreet dur={sceneFrames("night").dur} />
+    <Scene k="hook" fadeIn={0} tail={8}>
+      <Hook />
     </Scene>
-    <Scene k="routine">
-      <Routine />
+    <Scene k="night">
+      <NightStreet dur={sceneFrames("night").dur} />
     </Scene>
     <Scene k="numbers">
       <Numbers />
