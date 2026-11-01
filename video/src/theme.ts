@@ -1,4 +1,4 @@
-import { continueRender, delayRender, Easing } from "remotion";
+import { Easing } from "remotion";
 import { FONT_DATA } from "./font-data";
 
 /** SafeNav's own tokens (src/app/globals.css), extended only for the night scenes. */
@@ -34,9 +34,9 @@ export const POP = Easing.bezier(0.34, 1.4, 0.64, 1);
 
 let fontLoaded = false;
 /**
- * Registers the embedded font as a stylesheet rule and holds the first frame
- * until the browser has it. A short fallback timer means a slow tab can never
- * stall the whole render.
+ * Registers the embedded font as a stylesheet rule. It is a data URL, so the
+ * browser has it within a few frames; nothing in the video shows text before
+ * the first caption at about 1 s, so no frame waits on it.
  */
 export function loadFont() {
   if (fontLoaded || typeof document === "undefined") return;
@@ -44,13 +44,5 @@ export function loadFont() {
   const style = document.createElement("style");
   style.textContent = `@font-face { font-family: "Plus Jakarta Sans"; src: url(${FONT_DATA}) format("woff2"); font-weight: 200 800; font-display: block; }`;
   document.head.appendChild(style);
-  const handle = delayRender("Plus Jakarta Sans", { timeoutInMilliseconds: 60000 });
-  let done = false;
-  const finish = () => {
-    if (done) return;
-    done = true;
-    continueRender(handle);
-  };
-  Promise.all([document.fonts.load('800 66px "Plus Jakarta Sans"'), document.fonts.load('600 30px "Plus Jakarta Sans"')]).then(finish, finish);
-  setTimeout(finish, 8000);
+  void document.fonts.load('800 66px "Plus Jakarta Sans"');
 }
