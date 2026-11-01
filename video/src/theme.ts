@@ -1,4 +1,5 @@
-import { continueRender, delayRender, Easing, staticFile } from "remotion";
+import { continueRender, delayRender, Easing } from "remotion";
+import { FONT_DATA } from "./font-data";
 
 /** SafeNav's own tokens (src/app/globals.css), extended only for the night scenes. */
 export const C = {
@@ -36,7 +37,7 @@ export function loadFont() {
   if (fontLoaded || typeof document === "undefined") return;
   fontLoaded = true;
   const handle = delayRender("Plus Jakarta Sans");
-  const face = new FontFace("Plus Jakarta Sans", `url(${staticFile("fonts/PlusJakartaSans.woff2")}) format("woff2")`, { weight: "200 800" });
+  const face = new FontFace("Plus Jakarta Sans", `url(${FONT_DATA}) format("woff2")`, { weight: "200 800" });
   face
     .load()
     .then((loaded) => {
