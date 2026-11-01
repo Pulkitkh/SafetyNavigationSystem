@@ -12,7 +12,7 @@ const DAY = cue("numbers", "l04", 0);
 const EVERY = cue("numbers", "l04", 1);
 
 // 1,228 dots, one for each woman, every day.
-const COLS = 38;
+const COLS = 44;
 const DOTS = 1228;
 
 export function Numbers() {
@@ -67,7 +67,7 @@ export function Numbers() {
         <DigitRoll value="1,228" t={t - DAY - 4} dur={38} size={120} color={C.sos} />
         <div style={{ color: C.ink, fontSize: 54, fontWeight: 800 }}>a day</div>
       </div>
-      <div style={{ position: "absolute", left: 0, right: 0, bottom: 150, textAlign: "center", color: C.ink3, fontSize: 28, fontWeight: 600, opacity: labelIn * 0.9 }}>
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: 120, textAlign: "center", color: C.ink3, fontSize: 28, fontWeight: 600, opacity: labelIn * 0.9 }}>
         Source: NCRB, Crime in India 2023<span style={{ opacity: swap }}> · each dot is one case</span>
       </div>
     </AbsoluteFill>

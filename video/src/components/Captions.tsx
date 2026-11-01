@@ -56,8 +56,11 @@ export function Captions({ accentFor, hide }: { accentFor: (frame: number) => st
           letterSpacing: -1,
           color: C.ink,
           textAlign: "center",
-          textShadow: "0 4px 24px rgba(0,0,0,0.65), 0 2px 4px rgba(0,0,0,0.5)",
+          textShadow: "0 2px 6px rgba(0,0,0,0.45)",
           maxWidth: 940,
+          padding: "16px 30px 20px",
+          borderRadius: 32,
+          background: "rgba(12,11,20,0.84)",
         }}
       >
         <Rich text={c.text} accent={accentFor(frame)} />

@@ -40,6 +40,9 @@ export function Home() {
           <div style={{ position: "absolute", right: 22, top: 270, width: 14, height: 14, borderRadius: 7, background: "#b9a46a" }} />
         </div>
         <div style={{ position: "absolute", left: DOOR.left + DOOR.w + 30, top: DOOR.top + 140, padding: "6px 14px", borderRadius: 6, background: "#2a2147", color: "#d9cfa8", fontSize: 24, fontWeight: 700 }}>Sharma</div>
+        {/* Porch light */}
+        <div style={{ position: "absolute", left: DOOR.left + DOOR.w / 2 - 330, top: DOOR.top - 260, width: 660, height: 900, background: "radial-gradient(ellipse 50% 50% at 50% 30%, rgba(255,207,122,0.28) 0%, rgba(255,207,122,0) 100%)" }} />
+        <div style={{ position: "absolute", left: DOOR.left + DOOR.w / 2 - 26, top: DOOR.top - 74, width: 52, height: 30, borderRadius: "0 0 26px 26px", background: C.lamp, boxShadow: "0 10px 60px rgba(255,207,122,0.9)" }} />
         {/* Light on the step */}
         <div style={{ position: "absolute", left: DOOR.left - 200, top: GROUND - 20, width: DOOR.w + 400, height: 160, background: `radial-gradient(ellipse 50% 50% at 50% 20%, rgba(255,207,122,${0.45 * open}) 0%, rgba(255,207,122,0) 100%)` }} />
         <div style={{ position: "absolute", left: 0, top: GROUND, width: 1080, height: 420, background: "#0b0916" }} />

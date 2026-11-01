@@ -1,6 +1,6 @@
 import { AbsoluteFill, Img, interpolate, staticFile } from "remotion";
 import { Marker } from "../components/Marker";
-import { Phone } from "../components/Phone";
+import { Cam, Phone, screenPoint } from "../components/Phone";
 import { useT } from "../components/Scene";
 import { Tap } from "../components/Tap";
 import { C, EASE, EASE_IN_OUT, FONT } from "../theme";
@@ -20,7 +20,9 @@ const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
 export function Sos() {
   const t = useT();
   // Act 1: Priya's journey screen, closing in on SOS.
-  const zoom = interpolate(t, [WRONG, WRONG + 40], [1, 2.1], { ...clamp, easing: EASE_IN_OUT });
+  const s = interpolate(t, [WRONG, WRONG + 40], [1, 2.3], { ...clamp, easing: EASE_IN_OUT });
+  const btn = screenPoint(640, 220, 540, BTN[0], BTN[1]);
+  const to: [number, number] = [540, interpolate(s, [1, 2.3], [btn[1], 1200])];
   const hold = interpolate(t, [PRESS, SENT], [0, 1], clamp);
   const flash = interpolate(t, [SENT, SENT + 2, SENT + 16], [0, 0.85, 0], clamp);
   const out1 = interpolate(t, [ALERT - 14, ALERT], [1, 0], clamp);
@@ -39,7 +41,8 @@ export function Sos() {
     <AbsoluteFill style={{ overflow: "hidden", fontFamily: FONT }}>
       <AbsoluteFill style={{ background: `radial-gradient(ellipse 80% 60% at 50% 58%, rgba(225,29,72,${0.12 + 0.3 * tense}) 0%, rgba(12,11,20,0) 72%), ${C.canvas}` }} />
       {out1 > 0 && (
-        <Phone width={640} zoom={zoom} focus={BTN} style={{ left: 220, top: 540, opacity: out1, transform: `scale(${1 - (1 - out1) * 0.1})` }} glow={`rgba(225,29,72,${0.2 + 0.4 * hold})`}>
+        <Cam s={s} target={btn} to={to}>
+        <Phone width={640} style={{ left: 220, top: 540, opacity: out1, transform: `scale(${1 - (1 - out1) * 0.1})` }} glow={`rgba(225,29,72,${0.2 + 0.4 * hold})`}>
           <Img src={staticFile("screens/journey.png")} style={{ position: "absolute", width: 390, height: 844 }} />
           {/* Hold ring around the SOS button */}
           {t >= PRESS && (
@@ -50,6 +53,7 @@ export function Sos() {
           )}
           <Tap x={BTN[0]} y={BTN[1]} t={t - PRESS} hold={HOLD} />
         </Phone>
+        </Cam>
       )}
       {t >= ALERT - 8 && (
         <>
@@ -64,7 +68,7 @@ export function Sos() {
             {map > 0 && <div style={{ position: "absolute", left: 195 - 30, top: 193 - 30, width: 60, height: 60, borderRadius: 30, border: "3px solid #e11d48", opacity: 1 - pin, transform: `scale(${0.6 + pin * 2})` }} />}
           </Phone>
           {split > 0 && (
-            <Phone width={500} zoom={1.5} focus={[195, 300]} style={{ left: 50 - (1 - split) * 600, top: 600, transform: `rotate(${-3 * split}deg)` }} glow="rgba(225,29,72,0.35)">
+            <Phone width={500} style={{ left: 50 - (1 - split) * 600, top: 600, transform: `rotate(${-3 * split}deg)` }} glow="rgba(225,29,72,0.35)">
               <Img src={staticFile("screens/sos-answered.png")} style={{ position: "absolute", width: 390, height: 844 }} />
               <Marker box={[95, 296, 238, 318]} t={t - ANSWER - 10} color="#4ade9b" />
             </Phone>

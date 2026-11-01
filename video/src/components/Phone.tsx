@@ -84,3 +84,20 @@ export function phoneHeight(width: number) {
   const bezel = width * 0.035;
   return (SCREEN_H * (width - bezel * 2)) / SCREEN_W + bezel * 2;
 }
+
+/** Where a screenshot point (CSS px) lands in the frame, for a Phone at (left, top) of the given width. */
+export function screenPoint(width: number, left: number, top: number, x: number, y: number): [number, number] {
+  const bezel = width * 0.035;
+  const k = (width - bezel * 2) / SCREEN_W;
+  return [left + bezel + x * k, top + bezel + y * k];
+}
+
+/**
+ * A camera on the whole frame: scales by `s` and moves so that frame point
+ * `target` sits at `to`. With s=1 and target=to it is a no-op.
+ */
+export function Cam({ s, target, to = [540, 1100], children }: { s: number; target: [number, number]; to?: [number, number]; children: ReactNode }) {
+  const tx = to[0] - s * target[0];
+  const ty = to[1] - s * target[1];
+  return <div style={{ position: "absolute", inset: 0, transformOrigin: "0 0", transform: `translate(${tx}px, ${ty}px) scale(${s})` }}>{children}</div>;
+}

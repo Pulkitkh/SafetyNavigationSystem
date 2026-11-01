@@ -1,6 +1,6 @@
 import { AbsoluteFill, Img, interpolate, staticFile } from "remotion";
 import { AppBg } from "../components/AppBg";
-import { Phone } from "../components/Phone";
+import { Cam, Phone, screenPoint } from "../components/Phone";
 import { useT } from "../components/Scene";
 import { Tap } from "../components/Tap";
 import { EASE, EASE_IN_OUT, FONT } from "../theme";
@@ -13,15 +13,19 @@ const DEST = "Palasia Square";
 export function Plan() {
   const t = useT();
   const rise = interpolate(t, [-6, 26], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: EASE });
-  const zoom = interpolate(t, [10, 40, TAP + 14, TAP + 40], [1, 1.32, 1.32, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: EASE_IN_OUT });
-  const fy = interpolate(t, [10, 40, TAP - 10, TAP + 4], [560, 520, 520, 600], { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: EASE_IN_OUT });
+  const kz = { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: EASE_IN_OUT } as const;
+  const s = interpolate(t, [10, 40, TAP + 14, TAP + 40], [1, 1.3, 1.3, 1], kz);
+  const fy = interpolate(t, [10, 40, TAP - 10, TAP + 4, TAP + 14, TAP + 40], [422, 560, 560, 620, 620, 422], kz);
+  const target = screenPoint(640, 220, 540, 195, fy);
+  const to: [number, number] = [540, interpolate(s, [1, 1.3], [target[1], 1150])];
   const chars = Math.round(interpolate(t, [TYPE, TYPE + 30], [0, DEST.length], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }));
   const press = t >= TAP && t < TAP + 6 ? 0.96 : 1;
   const routes = interpolate(t, [TAP + 12, TAP + 24], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   return (
     <AbsoluteFill style={{ overflow: "hidden" }}>
       <AppBg />
-      <Phone width={640} zoom={zoom} focus={[195, fy]} style={{ left: 220, top: 540 + (1 - rise) * 900, transform: `rotate(${(1 - rise) * 6}deg)` }} glow="rgba(124,92,255,0.45)">
+      <Cam s={s} target={target} to={to}>
+      <Phone width={640} style={{ left: 220, top: 540 + (1 - rise) * 900, transform: `rotate(${(1 - rise) * 6}deg)` }} glow="rgba(124,92,255,0.45)">
         <Img src={staticFile("screens/plan-form.png")} style={{ position: "absolute", width: 390, height: 844 }} />
         {/* The destination, typed in place of the captured text */}
         {t < TAP + 24 && (
@@ -35,6 +39,7 @@ export function Plan() {
         <Img src={staticFile("screens/plan-routes.png")} style={{ position: "absolute", width: 390, height: 844, opacity: routes }} />
         <Tap x={250} y={663} t={t - TAP} />
       </Phone>
+      </Cam>
     </AbsoluteFill>
   );
 }
