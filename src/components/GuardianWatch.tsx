@@ -31,7 +31,8 @@ export function GuardianWatch() {
   useEffect(() => setDismissed(silenced()), []);
 
   const urgent = (people ?? []).find((p) => p.status === "sos" && p.trip && !dismissed.includes(p.trip.id) && !p.myResponse);
-  if (!urgent || path.startsWith("/g/") || path.startsWith("/t/")) return null;
+  // Their own page already shows the SOS, the map and the reply buttons; covering it would hide where they are.
+  if (!urgent || path.startsWith("/g/") || path.startsWith("/t/") || path === `/people/${urgent.userId}`) return null;
 
   const dismiss = (p: Person) => {
     const next = [...dismissed, p.trip!.id];
@@ -43,10 +44,10 @@ export function GuardianWatch() {
     }
   };
 
-  return <SosIncoming person={urgent} onDone={() => dismiss(urgent)} onResponded={() => void reload()} />;
+  return <SosIncoming person={urgent} onDone={() => dismiss(urgent)} onOpen={() => dismiss(urgent)} onResponded={() => void reload()} />;
 }
 
-function SosIncoming({ person, onDone, onResponded }: { person: Person; onDone: () => void; onResponded: () => void }) {
+function SosIncoming({ person, onDone, onOpen, onResponded }: { person: Person; onDone: () => void; onOpen: () => void; onResponded: () => void }) {
   const [siren, setSiren] = useState(true);
   const [busy, setBusy] = useState(false);
   useSiren(siren);
@@ -84,7 +85,15 @@ function SosIncoming({ person, onDone, onResponded }: { person: Person; onDone: 
           </p>
         </div>
 
-        <Link href={`/people/${person.userId}`} onClick={() => setSiren(false)} className="btn min-h-16 bg-white text-lg text-red-700">
+        <Link
+          href={`/people/${person.userId}`}
+          onClick={() => {
+            // Seen: stop the alarm and let the map show, rather than ringing again on the next screen.
+            setSiren(false);
+            onOpen();
+          }}
+          className="btn min-h-16 bg-white text-lg text-red-700"
+        >
           <MapPin className="h-6 w-6" aria-hidden />
           See where {first} is
         </Link>

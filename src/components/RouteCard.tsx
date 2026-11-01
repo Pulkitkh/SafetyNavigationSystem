@@ -1,17 +1,24 @@
 "use client";
 
-import { Accessibility, Building2, Cctv, Check, ChevronDown, Footprints, Info, Lightbulb, Route, Shield, Store, TriangleAlert, Users, type LucideIcon } from "lucide-react";
+import { Accessibility, Building2, Car, Cctv, Check, ChevronDown, Footprints, Info, Lightbulb, Route, Shield, Store, TriangleAlert, Users, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { Badge, ScoreRing } from "@/components/ui";
 import { formatDistance, formatDuration } from "@/lib/client/api";
 import type { PlannedRoute } from "@/lib/safety/plan";
-import { FACTOR_LABELS, FACTORS, scoreColor } from "@/lib/safety/factors";
+import { factorLabel, FACTORS, scoreColor } from "@/lib/safety/factors";
 
 const PERIOD_TEXT = {
   day: "Daylight: lighting isn't counted.",
   twilight: "Dusk or dawn: lighting starts to matter.",
   night: "After dark: lighting and open shops matter most.",
   late_night: "Late night: most shops are shut, so lighting and isolation dominate.",
+} as const;
+
+const RIDE_PERIOD_TEXT = {
+  day: "For a ride, what counts is staying on busy main roads and away from isolated land, where a stop or detour would leave you with nobody around.",
+  twilight: "For a ride at dusk: busy main roads, lighting and isolated stretches matter most.",
+  night: "For a ride after dark: busy, lit main roads are safest; isolated land and narrow lanes are where a stop or detour is most dangerous.",
+  late_night: "For a late-night ride: isolated stretches and dark lanes weigh most, since few places are open to stop at.",
 } as const;
 
 const BAND = {
@@ -109,9 +116,13 @@ export function RouteCard({
         <div className="fade-in space-y-3 px-4 pb-4 text-sm">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {s.weights.lighting > 0 && <Stat icon={Lightbulb} value={s.stats.litShare == null ? "Unmapped" : `${Math.round(s.stats.litShare * 100)}%`} label="lit stretches" />}
-            <Stat icon={Footprints} value={`${Math.round(s.stats.footpathShare * 100)}%`} label="with footpath" />
+            {s.mode === "ride" ? (
+              <Stat icon={Car} value={`${Math.round((s.stats.mainRoadShare ?? 0) * 100)}%`} label="on main roads" />
+            ) : (
+              <Stat icon={Footprints} value={`${Math.round(s.stats.footpathShare * 100)}%`} label="with footpath" />
+            )}
             <Stat icon={Store} value={String(s.stats.openPlaces)} label="places open" />
-            <Stat icon={Building2} value={s.factors.frontage >= 60 ? "Many" : s.factors.frontage >= 35 ? "Some" : "Few"} label="buildings facing" />
+            {s.mode !== "ride" && <Stat icon={Building2} value={s.factors.frontage >= 60 ? "Many" : s.factors.frontage >= 35 ? "Some" : "Few"} label="buildings facing" />}
             <Stat icon={Shield} value={s.stats.nearestPoliceM == null ? "> 2 km" : formatDistance(s.stats.nearestPoliceM)} label="to police" />
             <Stat icon={s.stats.cctv ? Cctv : Users} value={s.stats.cctv ? String(s.stats.cctv) : String(s.stats.reportsNearby)} label={s.stats.cctv ? "CCTV mapped" : "user reports"} />
           </div>
@@ -152,13 +163,13 @@ export function RouteCard({
           </button>
           {why && (
             <div className="fade-in space-y-2.5">
-              <p className="text-ink-2">{PERIOD_TEXT[s.period]}</p>
+              <p className="text-ink-2">{(s.mode === "ride" ? RIDE_PERIOD_TEXT : PERIOD_TEXT)[s.period]}</p>
               <ul className="space-y-2">
                 {FACTORS.filter((f) => s.weights[f] > 0).map((f) => (
                   <li key={f}>
                     <div className="flex justify-between gap-2 text-[13px] text-ink-2">
                       <span>
-                        {FACTOR_LABELS[f]} <span className="text-ink-3">· {Math.round(s.weights[f] * 100)}%</span>
+                        {factorLabel(f, s.mode)} <span className="text-ink-3">· {Math.round(s.weights[f] * 100)}%</span>
                       </span>
                       <span className="font-bold text-ink">{s.factors[f]}</span>
                     </div>
@@ -189,7 +200,7 @@ export function RouteCard({
 
       {selected && !s && mode === "walk" && <p className="px-4 pb-4 text-sm text-ink-2">Not scored. Directions and live monitoring still work.</p>}
 
-      {selected && !s && mode === "ride" && (
+      {selected && mode === "ride" && (
         <p className="px-4 pb-4 text-sm text-ink-2">
           During the ride SafeNav watches for detours, long unexplained stops and late arrival, and asks if you&apos;re OK. Your contacts can follow the
           vehicle live.

@@ -50,6 +50,15 @@ export default function AboutPage() {
         </section>
 
         <section className="card p-4">
+          <h2 className="mb-1 text-lg font-extrabold text-ink">Cab and auto rides</h2>
+          <p>
+            Ride routes are scored too, for what matters in a vehicle: staying on busy main roads, avoiding isolated land (industrial estates, empty
+            outskirts, forest) and dark lanes where a stop or a detour would leave you with nobody around, plus lighting, open places and police along the
+            way. During the ride SafeNav also watches for detours, long stops and late arrival.
+          </p>
+        </section>
+
+        <section className="card p-4">
           <h2 className="mb-1 text-lg font-extrabold text-ink">When the data isn&apos;t there, we say so</h2>
           <p>
             Much of India&apos;s street lighting, footpaths and shops isn&apos;t mapped yet. Where something is unmapped, SafeNav uses a cautious estimate

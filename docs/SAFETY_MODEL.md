@@ -68,6 +68,27 @@ Reports older than 365 days are ignored. Reports flagged 3+ times, and more ofte
 - **Advice:** if the recommended route scores below 50 after dark, the plan says plainly that every walking route scores low at this hour and suggests a monitored cab or auto ride, or waiting somewhere busy and lit.
 - **Step-free:** routes using mapped steps are only recommended when no step-free route exists, and are listed after the step-free ones. The safety search adds 30× length to steps and `wheelchair=no` ways.
 
+## Cab and auto rides
+
+Footpaths and homes facing the street don't matter in a vehicle. What matters is whether the route keeps to busy main roads or cuts through isolated land and dark lanes, where a stop, a breakdown or a detour would leave you with nobody around.
+
+- **Candidates:** OSRM car routing with `alternatives=3` and one via-point detour either side (15% of the trip distance); anything more than 1.5× slower than the fastest is dropped; up to 4 are scored. No own path search, since that would need one-way streets and turn restrictions.
+- **Data:** street cells within 80 m of each route, help within 2 km. Rides over 40 km are monitored but not scored.
+- **Sampling:** every 40 m in 200 m segments; weak stretches must be at least 300 m.
+- **Road type** (in place of footpath): primary and secondary 90, trunk 88 (80 after dark), tertiary 80, motorway 82 (70 after dark: fast, few places to stop), residential 70 (58), unclassified 65 (50), service roads and lanes 60 or 55 (35 after dark), tracks 35 (20).
+- **Lighting, isolation, open places, help and community reports** are computed as for walking.
+
+| Factor | Day | Twilight | Night | Late night |
+| --- | --- | --- | --- | --- |
+| Road type | 30% | 27% | 25% | 25% |
+| Isolated land along the route | 20% | 21% | 22% | 25% |
+| Community reports | 25% | 18% | 15% | 13% |
+| Open places along the way | 15% | 14% | 13% | 12% |
+| Lighting | 0% | 10% | 15% | 15% |
+| Help nearby | 10% | 10% | 10% | 10% |
+
+Ranking, ranges and confidence work as for walks. If every ride route scores below 50, the plan says so and recommends sharing the trip live with monitoring on.
+
 ## Weather (Open-Meteo hourly forecast)
 
 | Condition | Rule | Effect |
@@ -133,6 +154,6 @@ Industrial estates, cemeteries, parks, railway land and military areas are often
 - Priors and weights are expert-set. They should be calibrated against Safetipin audit data or user feedback where available.
 - Very long walks (>15 km) are not scored, and the safety search covers trips up to 6 km in a straight line; longer walks compare the router's routes only.
 - The first plan in a part of a city not seen before downloads its street cells (up to 15 seconds, then vector tiles fill in); later plans there are instant. The app asks the server to fetch the cells around the user as soon as it knows where they are.
-- Cab and auto rides are monitored live (detours, stops, late arrival) but their routes aren't scored: the walking factors don't describe the risks of a ride.
+- Ride scores rest on map data only; the driver's own behaviour is covered by live ride monitoring, not by the score.
 - OpenStreetMap rarely maps kerbs, ramps or broken pavements, so step-free results are only as good as local mapping.
 - If no street data is available after all mirrors and the stale cache, routes are returned unscored with a note, rather than not at all.

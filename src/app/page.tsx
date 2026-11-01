@@ -404,11 +404,11 @@ export default function PlanPage() {
               {loading ? (
                 <>
                   <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden />
-                  {mode === "walk" ? "Checking lights, shops and streets…" : "Finding route…"}
+                  {mode === "walk" ? "Checking lights, shops and streets…" : "Checking main roads, lighting and isolated stretches…"}
                 </>
               ) : (
                 <>
-                  {mode === "walk" ? "Find safest route" : "Plan ride"}
+                  {mode === "walk" ? "Find safest route" : "Find safest ride route"}
                   <ArrowRight className="h-5 w-5" aria-hidden />
                 </>
               )}

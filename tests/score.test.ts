@@ -13,6 +13,7 @@ import {
   lightingScore,
   openProbability,
   reportWeight,
+  rideRoadScore,
   scoreRoute,
   walkpathScore,
   WEIGHTS,
@@ -314,5 +315,47 @@ describe("honest about missing data", () => {
     expect(walkpathScore({ highway: "footway", bridge: "yes" }, true)).toMatchObject({ score: 45, reason: expect.stringMatching(/overbridge/) });
     expect(walkpathScore({ highway: "footway", bridge: "yes" }, false).score).toBe(75);
     expect(walkpathScore({ highway: "steps" }, true).score).toBe(50);
+  });
+});
+
+describe("ride scoring", () => {
+  const start: LngLat = [75.86, 22.72];
+  const main = [start, destinationPoint(start, 0, 3000)];
+  const sideStart = destinationPoint(start, 90, 600);
+  const side = [sideStart, destinationPoint(sideStart, 0, 3000)];
+  const ring = [
+    destinationPoint(sideStart, 270, 80),
+    destinationPoint(destinationPoint(sideStart, 270, 80), 0, 3000),
+    destinationPoint(destinationPoint(sideStart, 90, 80), 0, 3000),
+    destinationPoint(sideStart, 90, 80),
+  ];
+  const features: OsmFeatures = {
+    roads: [
+      { id: "w1", tags: { highway: "primary", lit: "yes" }, geometry: main },
+      { id: "w2", tags: { highway: "service", lit: "no" }, geometry: side },
+    ],
+    pois: resample(main, 100).map((s, i) => ({ id: `p${i}`, kind: "fuel" as const, point: destinationPoint(s.point, 90, 20), openingHours: "24/7" })),
+    areas: [{ id: "estate", kind: "industrial", ring: [...ring, ring[0]] }],
+  };
+  const index = new FeatureIndex(features, []);
+  const ctx = { departAt: new Date("2026-11-02T23:30:00+05:30"), tz: TZ, mode: "ride" as const };
+
+  it("rates a lit main road far above a dark lane through an industrial estate at night", () => {
+    const good = scoreRoute(main, 300, index, ctx);
+    const bad = scoreRoute(side, 300, index, ctx);
+    expect(good.mode).toBe("ride");
+    expect(good.weights.frontage).toBe(0);
+    expect(good.stats.mainRoadShare).toBe(1);
+    expect(good.score).toBeGreaterThan(75);
+    expect(bad.band).toBe("avoid");
+    expect(bad.weakStretches[0].reasons.join(" ")).toMatch(/industrial|lane|lit/i);
+    expect(good.highlights.join(" ")).toMatch(/main roads/);
+  });
+
+  it("scores road types for a vehicle, not a pedestrian", () => {
+    expect(rideRoadScore({ highway: "primary" }, true).score).toBe(90);
+    expect(rideRoadScore({ highway: "primary", sidewalk: "no" }, true).score).toBe(90); // no footpath doesn't matter in a cab
+    expect(rideRoadScore({ highway: "service", service: "alley" }, true)).toMatchObject({ score: 35, reason: "Narrow lane or service road" });
+    expect(rideRoadScore({ highway: "track" }, true).score).toBeLessThan(30);
   });
 });

@@ -48,8 +48,30 @@ export const WEIGHTS: Record<LightPeriod, Record<Factor, number>> = {
   late_night: { lighting: 0.22, activity: 0.22, frontage: 0.08, walkpath: 0.05, isolation: 0.14, help: 0.1, transit: 0.03, community: 0.16 },
 };
 
+/**
+ * Cab and auto rides. Footpaths and homes facing the street don't matter in a
+ * vehicle; what does is whether the route keeps to busy main roads or cuts
+ * through isolated land and dark lanes, where a stop or a detour would leave
+ * you with nobody around. "walkpath" holds the road-type score for rides.
+ */
+export const RIDE_WEIGHTS: Record<LightPeriod, Record<Factor, number>> = {
+  day: { lighting: 0, activity: 0.15, frontage: 0, walkpath: 0.3, isolation: 0.2, help: 0.1, transit: 0, community: 0.25 },
+  twilight: { lighting: 0.1, activity: 0.14, frontage: 0, walkpath: 0.27, isolation: 0.21, help: 0.1, transit: 0, community: 0.18 },
+  night: { lighting: 0.15, activity: 0.13, frontage: 0, walkpath: 0.25, isolation: 0.22, help: 0.1, transit: 0, community: 0.15 },
+  late_night: { lighting: 0.15, activity: 0.12, frontage: 0, walkpath: 0.25, isolation: 0.25, help: 0.1, transit: 0, community: 0.13 },
+};
+
+export type TravelMode = "walk" | "ride";
+
+export function weightsFor(mode: TravelMode, period: LightPeriod) {
+  return (mode === "ride" ? RIDE_WEIGHTS : WEIGHTS)[period];
+}
+
 const SAMPLE_STEP_M = 20;
 const SEGMENT_M = 100;
+/** Rides are longer and change less from one metre to the next. */
+const RIDE_SAMPLE_STEP_M = 40;
+const RIDE_SEGMENT_M = 200;
 
 export interface CommunityReport {
   id: string;
@@ -70,6 +92,8 @@ export interface ScoringContext {
   foggy?: boolean;
   /** Wheelchair, walker, stroller or anyone who cannot use steps. */
   stepFree?: boolean;
+  /** Walking (default) or a cab / auto ride. */
+  mode?: TravelMode;
 }
 
 export interface ScoredSegment {
@@ -126,7 +150,10 @@ export interface RouteSafety {
     matchedShare: number;
     /** Share of the route scored from the lighter vector-tile data. */
     tilesShare: number;
+    /** Share on trunk, primary or secondary roads (rides). */
+    mainRoadShare: number;
   };
+  mode: TravelMode;
 }
 
 // ---------------------------------------------------------------------------
@@ -377,6 +404,24 @@ function baseWalkpath(tags: Record<string, string> | undefined, dark: boolean, o
   return { score: 55, known: false };
 }
 
+/**
+ * Road type for a ride: main roads have traffic, shops, police patrols and
+ * other vehicles to flag down; narrow lanes and tracks after dark don't.
+ */
+export function rideRoadScore(tags: Record<string, string> | undefined, dark: boolean): { score: number; known: boolean; reason?: string } {
+  const hw = tags?.highway;
+  if (!hw) return { score: 55, known: false };
+  if (/^(primary|secondary)(_link)?$/.test(hw)) return { score: 90, known: true };
+  if (/^trunk(_link)?$/.test(hw)) return { score: dark ? 80 : 88, known: true };
+  if (/^motorway(_link)?$/.test(hw)) return { score: dark ? 70 : 82, known: true, ...(dark ? { reason: "Fast highway with few places to stop" } : {}) };
+  if (/^tertiary(_link)?$/.test(hw)) return { score: 80, known: true };
+  if (hw === "residential" || hw === "living_street") return { score: dark ? 58 : 70, known: true };
+  if (hw === "unclassified" || hw === "road") return { score: dark ? 50 : 65, known: true, ...(dark ? { reason: "Minor road after dark" } : {}) };
+  if (hw === "service") return tags?.service === "alley" || dark ? { score: dark ? 35 : 55, known: true, reason: "Narrow lane or service road" } : { score: 60, known: true };
+  if (hw === "track") return { score: dark ? 20 : 35, known: true, reason: "Unpaved track" };
+  return { score: 50, known: false };
+}
+
 export const AREA_PENALTY: Record<AreaKind, { dark: number; light: number; label: string }> = {
   industrial: { dark: 70, light: 35, label: "an industrial area" },
   cemetery: { dark: 75, light: 30, label: "a cemetery" },
@@ -587,6 +632,7 @@ export class StretchEvaluator {
   readonly period: LightPeriod;
   readonly dark: boolean;
   readonly weights: Record<Factor, number>;
+  readonly ride: boolean;
   private readonly helpMemo = new Map<string, { policeM: number | null; havenM: number | null }>();
 
   constructor(
@@ -598,7 +644,8 @@ export class StretchEvaluator {
   ) {
     this.period = period;
     this.dark = isDark(period);
-    this.weights = WEIGHTS[period];
+    this.ride = ctx.mode === "ride";
+    this.weights = weightsFor(ctx.mode ?? "walk", period);
   }
 
   /** Facts about one point on a known street (or the nearest mapped one). */
@@ -606,7 +653,7 @@ export class StretchEvaluator {
     const matched = road === undefined ? (this.index.nearestRoad(point, 20) ?? this.index.nearestRoad(point, 35))?.road ?? null : road;
     const tags = matched?.tags;
     const lamps = this.index.lamps.near(point, 35).length;
-    const walk = walkpathScore(tags, this.dark, { stepFree: this.ctx.stepFree, heavyRain: this.ctx.heavyRain });
+    const walk = this.ride ? rideRoadScore(tags, this.dark) : walkpathScore(tags, this.dark, { stepFree: this.ctx.stepFree, heavyRain: this.ctx.heavyRain });
     const light = lightingScore(tags, lamps);
     // Fog scatters street light and hides people from view; lighting counts for less.
     if (this.ctx.foggy && this.period !== "day") light.score = Math.round(light.score * 0.8);
@@ -728,9 +775,9 @@ export class StretchEvaluator {
       reasons.push(ctx.foggy ? "Dim in fog" : known ? "Poorly lit stretch" : "Street lighting not mapped here");
     }
     if (factors.activity < 35) reasons.push(dark ? "Few open shops or people at this hour" : "Few shops or people around");
-    if (this.buildingsMapped && factors.frontage < 35) reasons.push("Few buildings facing the street");
+    if (weights.frontage > 0 && this.buildingsMapped && factors.frontage < 35) reasons.push("Few buildings facing the street");
     const walkReason = samples.find((f) => f.walk.reason)?.walk.reason;
-    if ((factors.walkpath < 50 || (ctx.stepFree && walkReason)) && walkReason) reasons.push(walkReason);
+    if ((factors.walkpath < 50 || (ctx.stepFree && walkReason) || (this.ride && factors.walkpath < 60)) && walkReason) reasons.push(walkReason);
     const worstArea = samples.find((f) => f.isolation.worst)?.isolation.worst;
     if (factors.isolation < 60 && worstArea) reasons.push(`Passes ${AREA_PENALTY[worstArea].label}`);
     if (factors.help < 40) reasons.push(policeM == null ? "No police station within 2 km" : `Police station ${(policeM / 1000).toFixed(1)} km away`);
@@ -805,14 +852,20 @@ export function confidenceOf(width: number, matchedShare: number): ConfidenceLev
 }
 
 export function scoreRoute(coordinates: LngLat[], durationS: number, index: FeatureIndex, ctx: ScoringContext): RouteSafety {
-  const samples = resample(coordinates, SAMPLE_STEP_M);
+  const ride = ctx.mode === "ride";
+  const stepM = ride ? RIDE_SAMPLE_STEP_M : SAMPLE_STEP_M;
+  const segmentM = ride ? RIDE_SEGMENT_M : SEGMENT_M;
+  const samples = resample(coordinates, stepM);
   const total = samples.at(-1)?.at ?? 0;
   const period = tripPeriod(coordinates, durationS, ctx);
-  const buildingsMapped = buildingsMappedAlong(
-    index,
-    samples.map((s) => s.point),
-    total,
-  );
+  // Frontage doesn't count for rides, so there's no need to judge building coverage.
+  const buildingsMapped =
+    !ride &&
+    buildingsMappedAlong(
+      index,
+      samples.map((s) => s.point),
+      total,
+    );
   const ev = new StretchEvaluator(index, ctx, period, buildingsMapped);
   const weights = ev.weights;
   const etaAt = (at: number) => new Date(ctx.departAt.getTime() + (total > 0 ? (at / total) * durationS * 1000 : 0));
@@ -827,7 +880,7 @@ export function scoreRoute(coordinates: LngLat[], durationS: number, index: Feat
   // Group samples into ~100 m segments.
   const groups: (typeof facts)[] = [];
   for (const x of facts) {
-    const g = Math.min(Math.floor(x.at / SEGMENT_M), Math.max(0, Math.ceil(total / SEGMENT_M) - 1));
+    const g = Math.min(Math.floor(x.at / segmentM), Math.max(0, Math.ceil(total / segmentM) - 1));
     (groups[g] ??= []).push(x);
   }
 
@@ -842,7 +895,7 @@ export function scoreRoute(coordinates: LngLat[], durationS: number, index: Feat
     if (!group?.length) continue;
     const from = group[0].at;
     const to = group.at(-1)!.at;
-    const len = Math.max(SAMPLE_STEP_M, to - from + SAMPLE_STEP_M);
+    const len = Math.max(stepM, to - from + stepM);
     const center = group[Math.floor(group.length / 2)].f.point;
     const r = ev.stretch(
       group.map((x) => x.f),
@@ -858,8 +911,8 @@ export function scoreRoute(coordinates: LngLat[], durationS: number, index: Feat
     if (r.policeM != null) nearestPolice = nearestPolice == null ? r.policeM : Math.min(nearestPolice, r.policeM);
     segments.push({
       from,
-      to: Math.min(total, to + SAMPLE_STEP_M),
-      coordinates: coordinatesBetween(coordinates, from, to + SAMPLE_STEP_M),
+      to: Math.min(total, to + stepM),
+      coordinates: coordinatesBetween(coordinates, from, to + stepM),
       score: r.score,
       lo: r.scoreLo,
       hi: r.scoreHi,
@@ -883,6 +936,7 @@ export function scoreRoute(coordinates: LngLat[], durationS: number, index: Feat
   const footpathShare = all.length ? all.filter((f) => f.footpath).length / all.length : 0;
   const matchedShare = all.length ? all.filter((f) => f.road).length / all.length : 0;
   const tilesShare = all.length ? all.filter((f) => f.tiles).length / all.length : 0;
+  const mainRoadShare = all.length ? all.filter((f) => f.major).length / all.length : 0;
 
   const notes: string[] = [];
   if (matchedShare < 0.8) notes.push(`Only ${Math.round(matchedShare * 100)}% of this route follows mapped streets or paths.`);
@@ -891,10 +945,10 @@ export function scoreRoute(coordinates: LngLat[], durationS: number, index: Feat
     if (share < 0.3) notes.push(`Street lighting is mapped for ${share < 0.05 ? "almost none" : `only ${Math.round(share * 100)}%`} of this route, so lighting is estimated from road type.`);
   }
   const majorFacts = all.filter((f) => f.major);
-  if (majorFacts.length && majorFacts.filter((f) => f.walk.known).length / majorFacts.length < 0.3) notes.push("Footpaths along main roads are mostly unmapped here.");
+  if (!ride && majorFacts.length && majorFacts.filter((f) => f.walk.known).length / majorFacts.length < 0.3) notes.push("Footpaths along main roads are mostly unmapped here.");
   if (ohTotal && ohKnown / ohTotal < 0.3) notes.push("Few places list opening hours; open/closed is estimated from typical hours.");
   if (index.placesSparse) notes.push("Shops and eateries look under-mapped in this area, so there may be more people around than counted.");
-  if (!buildingsMapped) notes.push("Buildings are barely mapped along this route, so frontage is not judged.");
+  if (!ride && !buildingsMapped) notes.push("Buildings are barely mapped along this route, so frontage is not judged.");
   if (tilesShare > 0.2) {
     notes.push(
       tilesShare > 0.95
@@ -917,10 +971,11 @@ export function scoreRoute(coordinates: LngLat[], durationS: number, index: Feat
   if (weights.lighting > 0 && litShare != null && litShare >= 0.6 && litKnown.length / Math.max(1, all.length) >= 0.3) {
     highlights.push(`${Math.round(litShare * 100)}% of mapped stretches are lit`);
   }
-  if (footpathShare >= 0.5) highlights.push(`Footpath or pedestrian way for ${Math.round(footpathShare * 100)}% of the walk`);
+  if (ride && mainRoadShare >= 0.6) highlights.push(`${Math.round(mainRoadShare * 100)}% on busy main roads`);
+  if (!ride && footpathShare >= 0.5) highlights.push(`Footpath or pedestrian way for ${Math.round(footpathShare * 100)}% of the walk`);
   if (openSeen.size >= 5) highlights.push(`${openSeen.size} shops and places likely open along the way`);
   if (nearestPolice != null && nearestPolice <= 500) highlights.push(`Police station ${Math.round(nearestPolice)} m from the route`);
-  if (buildingsMapped && factorAvg.frontage >= 75) highlights.push("Homes and shops line most of the way");
+  if (!ride && buildingsMapped && factorAvg.frontage >= 75) highlights.push("Homes and shops line most of the way");
   if (cctvSeen.size) highlights.push(`${cctvSeen.size} mapped CCTV camera${cctvSeen.size > 1 ? "s" : ""}`);
 
   return {
@@ -930,7 +985,7 @@ export function scoreRoute(coordinates: LngLat[], durationS: number, index: Feat
     factors: factorAvg,
     weights,
     segments,
-    weakStretches: findWeakStretches(segments),
+    weakStretches: findWeakStretches(segments, WEAK_THRESHOLD, ride ? 300 : 80),
     highlights,
     confidence: { level, coverage: Math.round(clamp(1 - width / 40, 0, 1) * matchedShare * 100) / 100, notes },
     range: { lo, hi },
@@ -945,7 +1000,9 @@ export function scoreRoute(coordinates: LngLat[], durationS: number, index: Feat
       steps: stepWays.size,
       matchedShare: Math.round(matchedShare * 100) / 100,
       tilesShare: Math.round(tilesShare * 100) / 100,
+      mainRoadShare: Math.round(mainRoadShare * 100) / 100,
     },
+    mode: ride ? "ride" : "walk",
   };
 }
 

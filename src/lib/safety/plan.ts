@@ -61,18 +61,22 @@ const MAX_CANDIDATES = 7;
 export const MAX_DETOUR_RATIO = 1.8;
 /** A safer route is recommended unless it is less than this many points safer than a quicker one. */
 export const MIN_SAFETY_GAIN = 3;
+/** Rides longer than this are monitored but not scored (the street data would be too much to load). */
+export const MAX_RIDE_SCORE_M = 40_000;
+/** Ride candidates more than this much slower than the fastest aren't offered. */
+const MAX_RIDE_DETOUR_RATIO = 1.5;
 
 /**
  * Via-points either side of the straight line, at two distances, so the
  * routing server returns genuinely different streets to compare.
  */
-export function viaPoints(from: LngLat, to: LngLat): LngLat[] {
+export function viaPoints(from: LngLat, to: LngLat, shares = [0.15, 0.3]): LngLat[] {
   const d = haversine(from, to);
   if (d < 400) return [];
   const mid: LngLat = [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2];
   const b = bearing(from, to);
   const out: LngLat[] = [];
-  for (const share of [0.15, 0.3]) {
+  for (const share of shares) {
     const offset = Math.min(Math.max(d * share, 120), 1500);
     out.push(destinationPoint(mid, (b + 90) % 360, offset), destinationPoint(mid, (b + 270) % 360, offset));
   }
@@ -96,7 +100,8 @@ async function routerCandidates(from: LngLat, to: LngLat, mode: TravelMode, opts
     osrmRoute([from, to], mode, 3),
     // A wheelchair-profile route avoids steps outright; scoring alone can only penalise them.
     wantStepFree ? valhallaRoute([from, to], mode, 1, { wheelchair: true }) : Promise.resolve([]),
-    ...(mode === "walk" ? viaPoints(from, to).map((v) => osrmRoute([from, v, to], mode, 0)) : []),
+    // Rides get the nearer detours only: a cab won't take a wide one, and the router's alternatives cover the rest.
+    ...(mode === "walk" ? viaPoints(from, to) : viaPoints(from, to, [0.15])).map((v) => osrmRoute([from, v, to], mode, 0)),
   ]);
   const stepFree = stepFreeResult.status === "fulfilled" ? stepFreeResult.value : [];
   if (primaryResult.status === "rejected" && !stepFree.length) throw primaryResult.reason;
@@ -177,10 +182,60 @@ export function rankRoutes(routes: PlannedRoute[], opts: PlanOptions = {}): Plan
   return [recommended, ...routes.filter((r) => r !== recommended).sort((a, b) => usable(a) - usable(b) || rankValue(b) - rankValue(a))];
 }
 
+type Result = (routes: PlannedRoute[], weather: PlanResult["weather"], extra?: Partial<PlanResult>) => PlanResult;
+type ToPlanned = (r: RawRoute, i: number, source: PlannedRoute["source"]) => PlannedRoute;
+
+/**
+ * Cab and auto rides: the router's alternatives (and a detour either side) are
+ * scored for what matters in a vehicle: busy main roads versus isolated land
+ * and dark lanes, lighting, open places and police along the way, and reports.
+ */
+async function planRide(routed: RawRoute[], from: LngLat, departAt: Date, result: Result, toPlanned: ToPlanned): Promise<PlanResult> {
+  const fastest = routed.reduce((a, b) => (b.duration < a.duration ? b : a));
+  const candidates = dedupeRoutes(routed.filter((r) => r.duration <= fastest.duration * MAX_RIDE_DETOUR_RATIO)).slice(0, 4);
+  const base = candidates.map((r, i) => toPlanned(r, i, "router"));
+  if (fastest.distance > MAX_RIDE_SCORE_M) {
+    return result(rankRoutes(base), null, { dataNote: "This ride is over 40 km, so its route isn't scored. SafeNav still watches for detours, long stops and late arrival." });
+  }
+  const lines = base.map((r) => r.coordinates);
+  const midTrip = new Date(departAt.getTime() + (fastest.duration * 1000) / 2);
+  const [dataResult, reports, weather] = await Promise.all([
+    linesData(lines.map((line) => ({ line, bufferM: 80 }))).then(
+      (v) => ({ ok: true as const, v }),
+      (err: Error) => ({ ok: false as const, err }),
+    ),
+    loadReports(lines, 100).catch(() => []),
+    weatherAt(from, midTrip),
+  ]);
+  const weatherOut = weather && { isRaining: weather.isRaining, heavyRain: weather.heavyRain, foggy: weather.foggy, visibilityM: weather.visibilityM, precipitationMm: weather.precipitationMm };
+  if (!dataResult.ok) {
+    console.error(`[plan] street data unavailable for a ride: ${dataResult.err.message}`);
+    return result(rankRoutes(base), weatherOut, { dataNote: "Street data is temporarily unavailable, so these ride routes are not scored. Live ride monitoring still works." });
+  }
+  const data = dataResult.v;
+  const index = new FeatureIndex(data.features, reports, { tileBoxes: data.tileBoxes });
+  const ctx: ScoringContext = { departAt, tz: appTimezone(), raining: !!weather?.isRaining, heavyRain: !!weather?.heavyRain, foggy: !!weather?.foggy, mode: "ride" };
+  for (const r of base) r.safety = scoreRoute(r.coordinates, r.duration, index, ctx);
+  const ranked = rankRoutes(base);
+  const advice = adviceFor(ranked);
+  return result(ranked, weatherOut, {
+    ...(data.cells.missing ? { dataNote: "Street data couldn't be loaded for part of this ride, so some stretches weren't checked." } : {}),
+    ...(advice ? { advice } : {}),
+    searched: { candidates: base.length, safetySearch: false, streetsScored: 0, dataCells: data.cells },
+  });
+}
+
 function adviceFor(routes: PlannedRoute[]): string | undefined {
   const best = routes.find((r) => r.tags.includes("recommended"));
   const s = best?.safety;
   if (!s) return undefined;
+  if (s.mode === "ride") {
+    if (s.confidence.level === "insufficient") return "There isn't enough map data to compare these ride routes. Keep ride monitoring on and share the trip with a contact.";
+    if (s.band === "avoid") {
+      return "Every route found for this ride passes isolated or poorly lit stretches. Share the trip live, keep ride monitoring on, and note the vehicle number before you get in.";
+    }
+    return undefined;
+  }
   if (s.confidence.level === "insufficient") {
     return "There isn't enough map data here to say which route is safest. Prefer busy, lit main roads, share your journey with a contact, and consider a cab after dark.";
   }
@@ -215,11 +270,7 @@ export async function planRoutes(from: LngLat, to: LngLat, mode: TravelMode, dep
   const routed = await routerCandidates(from, to, mode, opts);
   if (!routed.length) return result([], null);
 
-  if (mode === "ride") {
-    // Rides are monitored live rather than scored for walking factors.
-    const primary = routed.reduce((a, b) => (b.duration < a.duration ? b : a));
-    return result(rankRoutes([toPlanned(primary, 0, "router")]), null);
-  }
+  if (mode === "ride") return planRide(routed, from, departAt, result, toPlanned);
 
   const fastestRouted = routed.reduce((a, b) => (b.duration < a.duration ? b : a));
   if (fastestRouted.distance > MAX_WALK_M) {
