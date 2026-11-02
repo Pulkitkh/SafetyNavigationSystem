@@ -3,7 +3,7 @@ import { AppBg } from "../components/AppBg";
 import { Phone } from "../components/Phone";
 import { useT } from "../components/Scene";
 import { C, EASE, FONT } from "../theme";
-import { cue } from "../timeline";
+import { cue, tr } from "../timeline";
 
 const START = cue("live", "l12", 0);
 const FOLLOW = cue("live", "l12", 1);
@@ -44,8 +44,8 @@ export function Live() {
         <span style={{ width: 18, height: 18, borderRadius: 9, background: C.goodHi, opacity: live, boxShadow: `0 0 ${14 * live}px ${C.goodHi}` }} />
         LIVE
       </div>
-      <Label text="Priya" sub="walking home" x={50} p={a} />
-      <Label text="Maa" sub="following live" x={580} p={b} />
+      <Label text={tr("Priya", "प्रिया")} sub={tr("walking home", "घर जा रही है")} x={50} p={a} />
+      <Label text={tr("Maa", "माँ")} sub={tr("following live", "लाइव देख रही हैं")} x={580} p={b} />
     </AbsoluteFill>
   );
 }

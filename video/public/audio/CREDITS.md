@@ -4,7 +4,11 @@ Everything here is cleared for commercial posting without attribution. The sourc
 
 ## Narration
 
-`vo/l01.wav` to `vo/l17.wav`: generated offline with [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) (Apache-2.0), voice `af_heart`.
+English (`vo/*.wav`) and Hindi (`vo/hi/*.wav`): generated offline with [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) (Apache-2.0), voices `af_heart` and `hf_alpha`.
+
+## Fonts
+
+Plus Jakarta Sans and Mukta (Ek Type), both SIL Open Font License, embedded in `src/font-data*.ts`.
 
 ## Music and ambience
 

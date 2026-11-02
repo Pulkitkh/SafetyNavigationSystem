@@ -1,10 +1,9 @@
 import { Audio, Sequence, staticFile } from "remotion";
-import voTiming from "./vo-timing.json";
-import { BGM_TRACK_OFFSET_S, f, LINES, REVEAL_IMPACT_S, SHIFT_F, TOTAL_FRAMES } from "./timeline";
+import { BGM_TRACK_OFFSET_S, f, LANG, LINES, REVEAL_IMPACT_S, SHIFT_F, storyF, TOTAL_FRAMES, voTiming } from "./timeline";
 
 // Spans (frames) where the narrator is speaking, for ducking the music under her.
 const VO_SPANS = LINES.map((l) => {
-  const t = voTiming[l.id] as { dur: number; onset: number };
+  const t = voTiming[l.id];
   return [f(l.at + t.onset), f(l.at + t.dur)] as const;
 });
 
@@ -21,7 +20,7 @@ function ducked(frame: number, base: number, duck: number) {
  * on the original storyboard and move with it (SHIFT_F); the reveal is pinned to
  * the logo impact itself.
  */
-const SFX: { at: number; src: string; vol: number; trim?: number; len?: number }[] = [
+const SFX_EN: { at: number; src: string; vol: number; trim?: number; len?: number; pinned?: boolean }[] = [
   // The hook: a hit on the very first frame, then one accent per cut
   { at: 0, src: "bass-hit-short", vol: 0.55 },
   { at: 44, src: "whoosh-fast", vol: 0.28 },
@@ -48,8 +47,8 @@ const SFX: { at: number; src: string; vol: number; trim?: number; len?: number }
   { at: 926 + SHIFT_F, src: "whoosh-fast", vol: 0.25 },
   { at: 976 + SHIFT_F, src: "glitch-static", vol: 0.28 },
   // Reveal: riser into the impact, a sparkle on the name
-  { at: f(REVEAL_IMPACT_S) - f(2.6), src: "riser", vol: 0.55 },
-  { at: f(REVEAL_IMPACT_S) - 1, src: "impact-cine-big", vol: 0.75 },
+  { at: f(REVEAL_IMPACT_S) - f(2.6), src: "riser", vol: 0.55, pinned: true },
+  { at: f(REVEAL_IMPACT_S) - 1, src: "impact-cine-big", vol: 0.75, pinned: true },
   { at: 1093 + SHIFT_F, src: "shimmer-sparkle-sweep", vol: 0.3 },
   // The app
   { at: 1254 + SHIFT_F, src: "air-woosh-quick", vol: 0.3 },
@@ -83,6 +82,9 @@ const SFX: { at: number; src: string; vol: number; trim?: number; len?: number }
   { at: 2728 + SHIFT_F, src: "bass-hit-short", vol: 0.35 },
 ];
 
+// Effects follow their moment when another language stretches a scene.
+const SFX = SFX_EN.map((s) => ({ ...s, at: s.pinned ? s.at : storyF(s.at) }));
+
 export function Sound({ bgm }: { bgm: boolean }) {
   const musicFrom = f(REVEAL_IMPACT_S);
   return (
@@ -111,7 +113,7 @@ export function Sound({ bgm }: { bgm: boolean }) {
       )}
       {LINES.map((l) => (
         <Sequence key={l.id} from={f(l.at)}>
-          <Audio src={staticFile(`audio/vo/${l.id}.wav`)} volume={1} />
+          <Audio src={staticFile(`audio/vo/${LANG === "hi" ? "hi/" : ""}${l.id}.wav`)} volume={1} />
         </Sequence>
       ))}
       {SFX.map((s, i) => (

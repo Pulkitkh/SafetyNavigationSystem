@@ -2,7 +2,7 @@ import { AbsoluteFill, interpolate } from "remotion";
 import { Logo } from "../components/Logo";
 import { useT } from "../components/Scene";
 import { C, EASE, EASE_IN_OUT, FONT, POP } from "../theme";
-import { cue } from "../timeline";
+import { cue, tr } from "../timeline";
 
 const SOON = cue("outro", "l16", 0) + 10;
 const EARLY = cue("outro", "l16", 1) + 4;
@@ -37,19 +37,19 @@ export function Outro() {
         <div style={{ marginTop: 26, color: C.ink, fontSize: 124, fontWeight: 800, letterSpacing: -4 }}>SafeNav</div>
       </div>
       <div style={{ position: "absolute", left: 40, right: 40, top: 1010, display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 22, opacity: 1 - s2, transform: `translateY(${s2 * -30}px)` }}>
-        <Chip t={t - SOON} accent>Coming soon</Chip>
-        <Chip t={t - EARLY}>Follow for early access</Chip>
+        <Chip t={t - SOON} accent>{tr("Coming soon", "जल्द आ रहा है")}</Chip>
+        <Chip t={t - EARLY}>{tr("Follow for early access", "अर्ली एक्सेस के लिए फ़ॉलो करें")}</Chip>
       </div>
       <div style={{ position: "absolute", left: 0, right: 0, top: 920, textAlign: "center", fontSize: 128, fontWeight: 800, letterSpacing: -4, lineHeight: 1.08 }}>
-        <div style={{ color: C.ink, opacity: g1, transform: `translateY(${(1 - g1) * 30}px)` }}>Get home safe.</div>
-        <div style={{ color: C.brandInk, opacity: g2, transform: `translateY(${(1 - g2) * 30}px)` }}>Every night.</div>
+        <div style={{ color: C.ink, opacity: g1, transform: `translateY(${(1 - g1) * 30}px)` }}>{tr("Get home safe.", "सुरक्षित घर पहुँचिए।")}</div>
+        <div style={{ color: C.brandInk, opacity: g2, transform: `translateY(${(1 - g2) * 30}px)` }}>{tr("Every night.", "हर रात।")}</div>
       </div>
       {/* Engagement: a share prompt that echoes the hook, and the series */}
       <div style={{ position: "absolute", left: 80, right: 80, top: 1330, textAlign: "center", color: C.ink, fontSize: 42, fontWeight: 700, lineHeight: 1.25, opacity: follow, transform: `translateY(${(1 - follow) * 16}px)` }}>
-        Send this to someone who always texts <span style={{ color: C.brandInk }}>&ldquo;reached&rdquo;</span>
+        {tr("Send this to someone who always texts", "उसे भेजिए जो हमेशा मैसेज करती है")} <span style={{ color: C.brandInk }}>{tr("“reached”", "“पहुँच गई”")}</span>
       </div>
       <div style={{ position: "absolute", left: 0, right: 0, top: 1460, textAlign: "center", color: C.brandInk, fontSize: 34, fontWeight: 700, opacity: follow2 }}>
-        Follow for part 2: how SafeNav scores a street  →
+        {tr("Follow for part 2: how SafeNav scores a street", "पार्ट 2 के लिए फ़ॉलो करें: SafeNav गली को कैसे परखता है")}  →
       </div>
     </AbsoluteFill>
   );

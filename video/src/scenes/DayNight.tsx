@@ -2,7 +2,7 @@ import { AbsoluteFill, interpolate } from "remotion";
 import { Ring } from "../components/Ring";
 import { useT } from "../components/Scene";
 import { C, EASE, EASE_OUT, FONT } from "../theme";
-import { cue } from "../timeline";
+import { cue, tr } from "../timeline";
 
 const DAY = cue("daynight", "l05", 0);
 const NIGHT = cue("daynight", "l05", 1);
@@ -46,7 +46,7 @@ function Card({ t, top, night, pct, label }: { t: number; top: number; night?: b
         </div>
       </div>
       <div style={{ position: "absolute", left: 390, top: 180, right: 50, fontFamily: FONT }}>
-        <div style={{ fontSize: 34, fontWeight: 700, letterSpacing: 4, color: night ? C.brandInk : "#7a3a12" }}>{night ? "AFTER DARK" : "DURING THE DAY"}</div>
+        <div style={{ fontSize: 34, fontWeight: 700, letterSpacing: 4, color: night ? C.brandInk : "#7a3a12" }}>{night ? tr("AFTER DARK", "अँधेरे के बाद") : tr("DURING THE DAY", "दिन में")}</div>
         <div style={{ marginTop: 10, fontSize: 52, fontWeight: 800, lineHeight: 1.1, color: night ? C.ink : "#3a1d0a" }}>{label}</div>
       </div>
     </div>
@@ -58,10 +58,10 @@ export function DayNight() {
   const src = interpolate(t, [HALF, HALF + 16], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   return (
     <AbsoluteFill style={{ background: C.canvas, fontFamily: FONT }}>
-      <Card t={t - DAY + 6} top={540} pct={82} label="of women feel safe" />
-      <Card t={t - NIGHT + 2} top={1060} night pct={48} label="feel safe" />
+      <Card t={t - DAY + 6} top={540} pct={82} label={tr("of women feel safe", "महिलाएँ सुरक्षित महसूस करती हैं")} />
+      <Card t={t - NIGHT + 2} top={1060} night pct={48} label={tr("feel safe", "सुरक्षित महसूस करती हैं")} />
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 230, textAlign: "center", color: C.ink3, fontSize: 28, fontWeight: 600, opacity: src }}>
-        Source: She Shakti Suraksha Survey 2025, CNN-News18
+        {tr("Source", "स्रोत")}: She Shakti Suraksha Survey 2025, CNN-News18
       </div>
     </AbsoluteFill>
   );

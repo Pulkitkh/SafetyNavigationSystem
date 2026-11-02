@@ -5,7 +5,7 @@ import { Priya } from "../components/Priya";
 import { useT } from "../components/Scene";
 import { Tap } from "../components/Tap";
 import { C, EASE, EASE_IN_OUT, EASE_OUT, FONT } from "../theme";
-import { cue } from "../timeline";
+import { cue, tr } from "../timeline";
 
 const SAFE = cue("home", "l15", 1);
 const SEES = cue("home", "l15", 2);
@@ -64,8 +64,8 @@ export function Home() {
         </div>
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", justifyContent: "space-between", color: C.ink3, fontSize: 26, fontWeight: 700 }}>
-            <span>MESSAGES · to Maa</span>
-            <span>now</span>
+            <span>{tr("MESSAGES · to Maa", "मैसेज · माँ को")}</span>
+            <span>{tr("now", "अभी")}</span>
           </div>
           <div style={{ color: C.ink, fontSize: 34, fontWeight: 700, marginTop: 6, lineHeight: 1.25 }}>Priya Sharma reached Palasia Square safely.</div>
         </div>

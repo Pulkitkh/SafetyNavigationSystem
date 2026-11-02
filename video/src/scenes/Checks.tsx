@@ -4,14 +4,14 @@ import { Icon } from "../components/Icons";
 import { useT } from "../components/Scene";
 import { rand } from "../util";
 import { C, EASE, EASE_IN_OUT, FONT, POP } from "../theme";
-import { cue } from "../timeline";
+import { cue, tr } from "../timeline";
 
 const CHIPS = [
-  { label: "Street lights", icon: "light", color: C.lamp },
-  { label: "Open shops", icon: "store", color: C.goodHi },
-  { label: "Footpaths", icon: "foot", color: "#7cc4ff" },
-  { label: "Police nearby", icon: "shield", color: C.brandInk },
-  { label: "Time of night", icon: "moon", color: "#f4efe0" },
+  { label: tr("Street lights", "स्ट्रीट लाइट्स"), icon: "light", color: C.lamp },
+  { label: tr("Open shops", "खुली दुकानें"), icon: "store", color: C.goodHi },
+  { label: tr("Footpaths", "फ़ुटपाथ"), icon: "foot", color: "#7cc4ff" },
+  { label: tr("Police nearby", "पास में पुलिस"), icon: "shield", color: C.brandInk },
+  { label: tr("Time of night", "रात का समय"), icon: "moon", color: "#f4efe0" },
 ] as const;
 const AT = CHIPS.map((_, i) => cue("checks", "l10", i));
 
@@ -51,7 +51,7 @@ export function Checks() {
         <div style={{ position: "absolute", left: 0, right: 0, top: scan * CARD.h - 120, height: 120, background: "linear-gradient(rgba(124,92,255,0) 0%, rgba(124,92,255,0.22) 85%, rgba(178,165,255,0.9) 100%)" }} />
         <div style={{ position: "absolute", left: 24, bottom: 24, padding: "14px 24px", borderRadius: 999, background: "rgba(12,11,20,0.85)", color: C.ink, fontSize: 32, fontWeight: 800, display: "flex", gap: 12, alignItems: "center" }}>
           <span style={{ width: 14, height: 14, borderRadius: 7, background: C.goodHi, boxShadow: `0 0 12px ${C.goodHi}` }} />
-          {streets.toLocaleString("en-IN")} streets checked
+          {streets.toLocaleString("en-IN")} {tr("streets checked", "गलियाँ जाँची गईं")}
         </div>
       </div>
       {CHIPS.map((c, i) => {

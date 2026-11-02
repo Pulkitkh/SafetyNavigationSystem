@@ -1,10 +1,18 @@
 // The one timeline: scenes, narration, captions and sound effects all derive from here.
-import voTiming from "./vo-timing.json";
+import { getInputProps } from "remotion";
+import voEn from "./vo-timing.json";
+import voHi from "./vo-timing-hi.json";
 
 export const FPS = 30;
 export const W = 1080;
 export const H = 1920;
 export const f = (s: number) => Math.round(s * FPS);
+
+/** Language of this render: `--props='{"lang":"hi"}'` renders the Hindi cut. */
+export const LANG: "en" | "hi" = (getInputProps() as { lang?: string }).lang === "hi" ? "hi" : "en";
+export const tr = (en: string, hi: string) => (LANG === "hi" ? hi : en);
+type Timing = { dur: number; onset: number; offset: number; gaps: number[][] };
+export const voTiming = (LANG === "hi" ? voHi : voEn) as Record<string, Timing>;
 
 /**
  * The hook: six quick lines before the story starts. Everything after it is
@@ -13,11 +21,11 @@ export const f = (s: number) => Math.round(s * FPS);
  */
 export const HOOK = 9.4;
 const D = HOOK - 6.1;
-/** Frames the story moved by, for effects placed on the original storyboard. */
+/** Frames the story moved by when the hook replaced the routine scene (for effects placed on the original 95 s storyboard). */
 export const SHIFT_F = Math.round(D * FPS);
 
-/** Scene boundaries in seconds (see SPEC.md storyboard). */
-export const SCENES = {
+/** The English storyboard, in seconds (see SPEC.md). Other languages stretch it where their lines run longer. */
+const BASE_SCENES = {
   hook: { from: 0, to: HOOK },
   night: { from: HOOK, to: HOOK + 6.6 },
   numbers: { from: 12.7 + D, to: 23.4 + D },
@@ -32,43 +40,91 @@ export const SCENES = {
   sos: { from: 71.0 + D, to: 80.4 + D },
   home: { from: 80.4 + D, to: 86.2 + D },
   outro: { from: 86.2 + D, to: 96.0 + D },
-} as const;
-export type SceneKey = keyof typeof SCENES;
-export const TOTAL_FRAMES = f(SCENES.outro.to);
+};
+export type SceneKey = keyof typeof BASE_SCENES;
+const ORDER = Object.keys(BASE_SCENES) as SceneKey[];
 
 /** The logo lands on a kick: the music starts exactly here, from a downbeat in the track. */
-export const REVEAL_IMPACT_S = 36.0 + D;
+const BASE_IMPACT_S = 36.0 + D;
 export const BGM_TRACK_OFFSET_S = 5.462;
 
-type Line = { id: keyof typeof voTiming; at: number; chunks: string[] };
+type Line = { id: string; at: number; chunks: string[]; hi: string[] };
 
 /** Narration: start time in seconds and caption chunks (*word* = highlighted). */
-export const LINES: Line[] = [
+const BASE_LINES: Line[] = [
   // The hook: the routine every woman knows, one beat each.
-  { id: "h01", at: 0.0, chunks: ["Keys between your fingers."] },
-  { id: "h02", at: 1.5, chunks: ["A fake phone call."] },
-  { id: "h03", at: 2.7, chunks: ["Walking a little faster."] },
-  { id: "h04", at: 4.05, chunks: ["\"Text me when you reach.\""] },
-  { id: "h05", at: 5.3, chunks: ["If you're a woman, you know this routine."] },
-  { id: "h06", at: 7.7, chunks: ["You shouldn't have to."] },
+  { id: "h01", at: 0.0, chunks: ["Keys between your fingers."], hi: ["उंगलियों के बीच चाबियाँ।"] },
+  { id: "h02", at: 1.5, chunks: ["A fake phone call."], hi: ["झूठी फ़ोन कॉल।"] },
+  { id: "h03", at: 2.7, chunks: ["Walking a little faster."], hi: ["थोड़ा तेज़ चलना।"] },
+  { id: "h04", at: 4.05, chunks: ["\"Text me when you reach.\""], hi: ["“पहुँच कर मैसेज करना।”"] },
+  { id: "h05", at: 5.3, chunks: ["If you're a woman, you know this routine."], hi: ["हर लड़की ये रूटीन जानती है।"] },
+  { id: "h06", at: 7.7, chunks: ["You shouldn't have to."], hi: ["आपको ये क्यों करना पड़े?"] },
   // The story
-  { id: "l01", at: HOOK + 0.7, chunks: ["It's *ten at night.*", "Priya's class just ended,", "and home is a twenty-minute walk away."] },
-  { id: "l03", at: 13.0 + D, chunks: ["In 2023,", "India recorded over 4 lakh,", "48 thousand *crimes against women.*"] },
-  { id: "l04", at: 19.8 + D, chunks: ["That's more than *1,200*,", "*every single day.*"] },
-  { id: "l05", at: 23.7 + D, chunks: ["Most women feel safe *during the day.*", "*After dark,*", "fewer than half do."] },
-  { id: "l06", at: 29.3 + D, chunks: ["And the maps we rely on", "show us the *fastest* route.", "Not the *safest* one."] },
-  { id: "l07", at: 36.3 + D, chunks: ["So we built *SafeNav.*"] },
-  { id: "l08", at: 38.6 + D, chunks: ["Navigation that puts", "*your safety first.*"] },
-  { id: "l09", at: 42.3 + D, chunks: ["Priya enters where she's going,", "and SafeNav checks *every street* on the way."] },
-  { id: "l10", at: 48.2 + D, chunks: ["*Street lights.*", "*Open shops.*", "*Footpaths.*", "*Police nearby.*", "Even the *time of night.*"] },
-  { id: "l11", at: 54.6 + D, chunks: ["Then it finds the *safest way home,*", "even if it takes a few minutes longer,", "and shows her *exactly why.*"] },
-  { id: "l12", at: 61.8 + D, chunks: ["She starts her journey,", "and her mother can *follow her live,* all the way."] },
-  { id: "l13", at: 66.8 + D, chunks: ["If she stops, or strays from the route,", "SafeNav *checks in.*"] },
-  { id: "l14", at: 71.2 + D, chunks: ["And if something ever feels wrong,", "one long press on *SOS*", "alerts her trusted contacts *instantly,*", "with her *live location.*"] },
-  { id: "l15", at: 80.6 + D, chunks: ["Tonight,", "Priya gets *home safe.*", "And her mother sees the moment she arrives."] },
-  { id: "l16", at: 86.6 + D, chunks: ["SafeNav is *coming soon.*", "Follow us, and be the first to try it."] },
-  { id: "l17", at: 91.5 + D, chunks: ["*Get home safe.*", "*Every night.*"] },
+  { id: "l01", at: HOOK + 0.7, chunks: ["It's *ten at night.*", "Priya's class just ended,", "and home is a twenty-minute walk away."], hi: ["*रात के दस* बजे हैं।", "प्रिया की क्लास अभी ख़त्म हुई है,", "और घर बीस मिनट की पैदल दूरी पर है।"] },
+  { id: "l03", at: 13.0 + D, chunks: ["In 2023,", "India recorded over 4 lakh,", "48 thousand *crimes against women.*"], hi: ["साल 2023 में,", "भारत में चार लाख,", "अड़तालीस हज़ार से ज़्यादा *महिलाओं के ख़िलाफ़ अपराध* दर्ज हुए।"] },
+  { id: "l04", at: 19.8 + D, chunks: ["That's more than *1,200*,", "*every single day.*"], hi: ["यानी रोज़ *1,200* से ज़्यादा,", "*हर एक दिन।*"] },
+  { id: "l05", at: 23.7 + D, chunks: ["Most women feel safe *during the day.*", "*After dark,*", "fewer than half do."], hi: ["ज़्यादातर महिलाएँ *दिन में* सुरक्षित महसूस करती हैं।", "*अँधेरा होते ही,*", "आधी से भी कम।"] },
+  { id: "l06", at: 29.3 + D, chunks: ["And the maps we rely on", "show us the *fastest* route.", "Not the *safest* one."], hi: ["और जिन मैप्स पर हम भरोसा करते हैं,", "वो *सबसे तेज़* रास्ता दिखाते हैं।", "*सबसे सुरक्षित* नहीं।"] },
+  { id: "l07", at: 36.3 + D, chunks: ["So we built *SafeNav.*"], hi: ["इसलिए हमने बनाया *SafeNav.*"] },
+  { id: "l08", at: 38.6 + D, chunks: ["Navigation that puts", "*your safety first.*"], hi: ["ऐसा नेविगेशन, जो रखे", "*आपकी सुरक्षा सबसे पहले।*"] },
+  { id: "l09", at: 42.3 + D, chunks: ["Priya enters where she's going,", "and SafeNav checks *every street* on the way."], hi: ["प्रिया बस डालती है कहाँ जाना है,", "और SafeNav रास्ते की *हर गली* जाँचता है।"] },
+  { id: "l10", at: 48.2 + D, chunks: ["*Street lights.*", "*Open shops.*", "*Footpaths.*", "*Police nearby.*", "Even the *time of night.*"], hi: ["*स्ट्रीट लाइट्स।*", "*खुली दुकानें।*", "*फ़ुटपाथ।*", "*पास में पुलिस।*", "और *रात का समय* भी।"] },
+  { id: "l11", at: 54.6 + D, chunks: ["Then it finds the *safest way home,*", "even if it takes a few minutes longer,", "and shows her *exactly why.*"], hi: ["फिर ये ढूँढता है *घर का सबसे सुरक्षित रास्ता,*", "चाहे उसमें कुछ मिनट ज़्यादा लगें,", "और बताता है *ठीक क्यों।*"] },
+  { id: "l12", at: 61.8 + D, chunks: ["She starts her journey,", "and her mother can *follow her live,* all the way."], hi: ["वो अपना सफ़र शुरू करती है,", "और उसकी माँ पूरे रास्ते *उसे लाइव देख* सकती हैं।"] },
+  { id: "l13", at: 66.8 + D, chunks: ["If she stops, or strays from the route,", "SafeNav *checks in.*"], hi: ["अगर वो रुक जाए, या रास्ते से भटक जाए,", "तो SafeNav *हाल पूछता है।*"] },
+  { id: "l14", at: 71.2 + D, chunks: ["And if something ever feels wrong,", "one long press on *SOS*", "alerts her trusted contacts *instantly,*", "with her *live location.*"], hi: ["और अगर कभी कुछ ग़लत लगे,", "तो *SOS* पर बस एक लंबा प्रेस", "उसके भरोसेमंद लोगों को *तुरंत* अलर्ट करता है,", "उसकी *लाइव लोकेशन* के साथ।"] },
+  { id: "l15", at: 80.6 + D, chunks: ["Tonight,", "Priya gets *home safe.*", "And her mother sees the moment she arrives."], hi: ["आज रात,", "प्रिया *सुरक्षित घर* पहुँचती है।", "और उसकी माँ को पहुँचते ही पता चल जाता है।"] },
+  { id: "l16", at: 86.6 + D, chunks: ["SafeNav is *coming soon.*", "Follow us, and be the first to try it."], hi: ["SafeNav *जल्द आ रहा है।*", "हमें फ़ॉलो करें, और सबसे पहले आज़माएँ।"] },
+  { id: "l17", at: 91.5 + D, chunks: ["*Get home safe.*", "*Every night.*"], hi: ["*सुरक्षित घर पहुँचिए।*", "*हर रात।*"] },
 ];
+
+// Lines in another language can run longer than the English slots. Each line
+// starts no earlier than its English time and no sooner than a short breath
+// after the previous line ends; every scene then moves with its first line and
+// grows by whatever its own lines needed. English stays exactly as laid out.
+const BREATH = 0.25;
+const SHIFT: Record<string, number> = {};
+{
+  let cum = 0;
+  let prevEnd = -Infinity;
+  for (const l of BASE_LINES) {
+    const t = voTiming[l.id];
+    const at = LANG === "en" ? l.at : Math.max(l.at + cum, prevEnd + BREATH - t.onset);
+    cum = at - l.at;
+    SHIFT[l.id] = cum;
+    prevEnd = at + t.offset;
+  }
+}
+const sceneOf = (s: number): SceneKey => ORDER.find((k) => s >= BASE_SCENES[k].from && s < BASE_SCENES[k].to) ?? "outro";
+const SCENE_SHIFT = Object.fromEntries(ORDER.map((k) => [k, SHIFT[BASE_LINES.find((l) => sceneOf(l.at) === k)!.id]])) as Record<SceneKey, number>;
+const LAST = BASE_LINES[BASE_LINES.length - 1];
+
+export const LINES = BASE_LINES.map((l) => ({ ...l, at: l.at + SHIFT[l.id], chunks: LANG === "hi" ? l.hi : l.chunks }));
+export const SCENES = Object.fromEntries(
+  ORDER.map((k, i) => {
+    const from = BASE_SCENES[k].from + SCENE_SHIFT[k];
+    const next = ORDER[i + 1];
+    const to = next ? BASE_SCENES[next].from + SCENE_SHIFT[next] : BASE_SCENES[k].to + SHIFT[LAST.id];
+    return [k, { from, to }];
+  }),
+) as Record<SceneKey, { from: number; to: number }>;
+export const TOTAL_FRAMES = f(SCENES.outro.to);
+
+/** The logo impact, in this language's timeline. */
+export const REVEAL_IMPACT_S = BASE_IMPACT_S + SCENE_SHIFT.reveal;
+
+/**
+ * Moves a frame placed on the English timeline to the same moment in this
+ * language: by its scene's shift, plus the shift of the latest line in that
+ * scene that has already started by then.
+ */
+export function storyF(frame: number): number {
+  const s = frame / FPS;
+  const k = sceneOf(s);
+  let shift = SCENE_SHIFT[k];
+  for (const l of BASE_LINES) if (sceneOf(l.at) === k && l.at <= s) shift = SHIFT[l.id];
+  return frame + f(shift);
+}
 
 export interface CaptionChunk {
   text: string;
@@ -85,7 +141,7 @@ export interface CaptionChunk {
 export function captionChunks(): CaptionChunk[] {
   const out: CaptionChunk[] = [];
   for (const line of LINES) {
-    const t = voTiming[line.id] as { dur: number; onset: number; offset: number; gaps: number[][] };
+    const t = voTiming[line.id];
     const end = t.gaps.length && t.gaps[t.gaps.length - 1][1] >= t.dur - 0.02 ? t.gaps[t.gaps.length - 1][0] : t.dur;
     const inner = t.gaps.filter((g) => g[0] > t.onset && g[0] < end - 0.05);
     const lens = line.chunks.map((c) => c.replace(/\*/g, "").length);

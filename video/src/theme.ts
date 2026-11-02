@@ -1,5 +1,7 @@
 import { Easing } from "remotion";
 import { FONT_DATA } from "./font-data";
+import { MUKTA } from "./font-data-hi";
+import { LANG } from "./timeline";
 
 /** SafeNav's own tokens (src/app/globals.css), extended only for the night scenes. */
 export const C = {
@@ -24,7 +26,8 @@ export const C = {
   skyBottom: "#1d1747",
 };
 
-export const FONT = "'Plus Jakarta Sans', system-ui, sans-serif";
+// Latin from the app's own face; Devanagari falls through to Mukta, glyph by glyph.
+export const FONT = "'Plus Jakarta Sans', 'Mukta', system-ui, sans-serif";
 
 /** Trust: entrances without bounce. Pop: a small overshoot, only for chips that "land". */
 export const EASE = Easing.bezier(0.25, 0.46, 0.45, 0.94);
@@ -42,7 +45,14 @@ export function loadFont() {
   if (fontLoaded || typeof document === "undefined") return;
   fontLoaded = true;
   const style = document.createElement("style");
-  style.textContent = `@font-face { font-family: "Plus Jakarta Sans"; src: url(${FONT_DATA}) format("woff2"); font-weight: 200 800; font-display: block; }`;
+  style.textContent =
+    `@font-face { font-family: "Plus Jakarta Sans"; src: url(${FONT_DATA}) format("woff2"); font-weight: 200 800; font-display: block; }` +
+    (LANG === "hi"
+      ? Object.entries(MUKTA)
+          .map(([w, src]) => `@font-face { font-family: "Mukta"; src: url(${src}) format("woff2"); font-weight: ${w}; font-display: block; unicode-range: U+0900-097F, U+1CD0-1CF9, U+200C-200D, U+20A8, U+20B9, U+25CC, U+A830-A839, U+A8E0-A8FF; }`)
+          .join("")
+      : "");
   document.head.appendChild(style);
   void document.fonts.load('800 66px "Plus Jakarta Sans"');
+  if (LANG === "hi") for (const w of [600, 700, 800]) void document.fonts.load(`${w} 66px "Mukta"`, "हिन्दी");
 }

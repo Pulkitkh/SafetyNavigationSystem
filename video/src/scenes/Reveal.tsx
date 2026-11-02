@@ -2,7 +2,7 @@ import { AbsoluteFill, interpolate } from "remotion";
 import { Logo } from "../components/Logo";
 import { useT } from "../components/Scene";
 import { C, EASE, EASE_OUT, FONT, POP } from "../theme";
-import { cue, f, REVEAL_IMPACT_S, SCENES } from "../timeline";
+import { cue, f, REVEAL_IMPACT_S, SCENES, tr } from "../timeline";
 
 const IMPACT = f(REVEAL_IMPACT_S) - f(SCENES.reveal.from);
 const WORD = cue("reveal", "l07", 0);
@@ -58,8 +58,8 @@ export function Reveal() {
         SafeNav
       </div>
       <div style={{ position: "absolute", left: 0, right: 0, top: 1300, textAlign: "center", fontWeight: 700, fontSize: 60, lineHeight: 1.2, color: C.ink2 }}>
-        <div style={{ opacity: tag, transform: `translateY(${(1 - tag) * 24}px)` }}>Navigation that puts</div>
-        <div style={{ opacity: tag2, transform: `translateY(${(1 - tag2) * 24}px)`, color: C.brandInk, fontWeight: 800 }}>your safety first.</div>
+        <div style={{ opacity: tag, transform: `translateY(${(1 - tag) * 24}px)` }}>{tr("Navigation that puts", "ऐसा नेविगेशन, जो रखे")}</div>
+        <div style={{ opacity: tag2, transform: `translateY(${(1 - tag2) * 24}px)`, color: C.brandInk, fontWeight: 800 }}>{tr("your safety first.", "आपकी सुरक्षा सबसे पहले।")}</div>
       </div>
       <AbsoluteFill style={{ background: "#fff", opacity: flash }} />
     </AbsoluteFill>

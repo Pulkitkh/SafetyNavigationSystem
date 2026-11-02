@@ -4,7 +4,7 @@ import { DigitRoll } from "../components/DigitRoll";
 import { useT } from "../components/Scene";
 import { rand } from "../util";
 import { C, EASE, EASE_OUT, FONT } from "../theme";
-import { cue } from "../timeline";
+import { cue, tr } from "../timeline";
 
 const ROLL = cue("numbers", "l03", 1) - 4; // "India recorded over 4 lakh…"
 const LABEL = cue("numbers", "l03", 2);
@@ -33,12 +33,12 @@ export function Numbers() {
       </div>
       {/* The year's total */}
       <div style={{ position: "absolute", left: 0, right: 0, top: 660 - swap * 120, display: "flex", flexDirection: "column", alignItems: "center", transform: `scale(${1 - swap * 0.42})`, transformOrigin: "50% 0", opacity: 1 - swap * 0.35 }}>
-        <div style={{ color: C.brandInk, fontSize: 44, fontWeight: 700, letterSpacing: 6, opacity: yearIn, transform: `translateY(${(1 - yearIn) * 20}px)` }}>INDIA · 2023</div>
+        <div style={{ color: C.brandInk, fontSize: 44, fontWeight: 700, letterSpacing: 6, opacity: yearIn, transform: `translateY(${(1 - yearIn) * 20}px)` }}>{tr("INDIA · 2023", "भारत · 2023")}</div>
         <div style={{ marginTop: 18, opacity: t >= ROLL ? 1 : 0 }}>
           <DigitRoll value="4,48,211" t={t - ROLL} dur={46} size={190} color={C.ink} />
         </div>
         <div style={{ marginTop: 10, color: C.ink2, fontSize: 46, fontWeight: 700, opacity: labelIn, transform: `translateY(${(1 - labelIn) * 16}px)` }}>
-          crimes against women, recorded
+          {tr("crimes against women, recorded", "महिलाओं के ख़िलाफ़ दर्ज अपराध")}
         </div>
       </div>
       {/* Every day */}
@@ -65,10 +65,10 @@ export function Numbers() {
       </div>
       <div style={{ position: "absolute", left: 0, right: 0, top: 900 + rows * cell + 40, display: "flex", justifyContent: "center", alignItems: "baseline", gap: 18, opacity: swap }}>
         <DigitRoll value="1,228" t={t - DAY - 4} dur={38} size={120} color={C.sos} />
-        <div style={{ color: C.ink, fontSize: 54, fontWeight: 800 }}>a day</div>
+        <div style={{ color: C.ink, fontSize: 54, fontWeight: 800 }}>{tr("a day", "हर दिन")}</div>
       </div>
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 120, textAlign: "center", color: C.ink3, fontSize: 28, fontWeight: 600, opacity: labelIn * 0.9 }}>
-        Source: NCRB, Crime in India 2023<span style={{ opacity: swap }}> · each dot is one case</span>
+        {tr("Source", "स्रोत")}: NCRB, Crime in India 2023<span style={{ opacity: swap }}> · {tr("each dot is one case", "हर बिंदु एक मामला")}</span>
       </div>
     </AbsoluteFill>
   );

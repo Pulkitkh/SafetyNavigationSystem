@@ -3,7 +3,7 @@ import { CityMap, MAIN, Me, pointAt, Route, type Pt } from "../components/CityMa
 import { Phone } from "../components/Phone";
 import { useT } from "../components/Scene";
 import { C, EASE, EASE_IN_OUT, FONT, POP } from "../theme";
-import { cue } from "../timeline";
+import { cue, tr } from "../timeline";
 
 const STRAY = cue("checkin", "l13", 0) + 38;
 const CHECK = cue("checkin", "l13", 1);
@@ -28,7 +28,7 @@ export function Checkin() {
           <Me at={at} t={t} />
         </CityMap>
         <div style={{ position: "absolute", left: OFF[0] + 80, top: OFF[1] - 34, padding: "14px 24px", borderRadius: 999, background: "#3a2a08", color: C.caution, fontFamily: FONT, fontWeight: 800, fontSize: 34, opacity: warn, transform: `scale(${0.7 + 0.3 * warn})`, transformOrigin: "0 50%" }}>
-          Off the route
+          {tr("Off the route", "रास्ते से बाहर")}
         </div>
       </AbsoluteFill>
       <Phone src="screens/checkin.png" width={600} zoom={1.2} focus={[195, 640]} style={{ left: 240, top: 560 + (1 - rise) * 1300 }} glow="rgba(225,29,72,0.25)" />

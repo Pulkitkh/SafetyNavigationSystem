@@ -4,7 +4,7 @@ import { Cam, Phone, screenPoint } from "../components/Phone";
 import { useT } from "../components/Scene";
 import { Tap } from "../components/Tap";
 import { C, EASE, EASE_IN_OUT, FONT } from "../theme";
-import { cue } from "../timeline";
+import { cue, tr } from "../timeline";
 
 const WRONG = cue("sos", "l14", 0);
 const PRESS = cue("sos", "l14", 1) + 8;
@@ -75,8 +75,8 @@ export function Sos() {
           )}
           {split > 0 && (
             <>
-              <div style={{ position: "absolute", left: 50, width: 500, top: 1680, textAlign: "center", color: C.ink, fontSize: 40, fontWeight: 800, opacity: split }}>Priya</div>
-              <div style={{ position: "absolute", left: 550, width: 500, top: 1680, textAlign: "center", color: C.ink, fontSize: 40, fontWeight: 800, opacity: split }}>Maa</div>
+              <div style={{ position: "absolute", left: 50, width: 500, top: 1680, textAlign: "center", color: C.ink, fontSize: 40, fontWeight: 800, opacity: split }}>{tr("Priya", "प्रिया")}</div>
+              <div style={{ position: "absolute", left: 550, width: 500, top: 1680, textAlign: "center", color: C.ink, fontSize: 40, fontWeight: 800, opacity: split }}>{tr("Maa", "माँ")}</div>
             </>
           )}
         </>

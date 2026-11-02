@@ -2,7 +2,7 @@ import { AbsoluteFill, interpolate } from "remotion";
 import { ALLEY, CityMap, FASTEST, Me, pointAt, Route, START } from "../components/CityMap";
 import { useT } from "../components/Scene";
 import { C, EASE, EASE_IN_OUT, FONT, POP } from "../theme";
-import { cue } from "../timeline";
+import { cue, tr } from "../timeline";
 
 const DRAW = cue("fastest", "l06", 1);
 const WARN = cue("fastest", "l06", 2);
@@ -54,16 +54,16 @@ export function Fastest() {
           <Me at={START} t={t} color={MAPS_BLUE} />
         </CityMap>
         <Pill x={mid[0] + 170} y={mid[1] - 30} t={t - DRAW - 22} color="#0b1a33" bg={MAPS_BLUE}>
-          Fastest · 18 min
+          {tr("Fastest · 18 min", "सबसे तेज़ · 18 मिनट")}
         </Pill>
         <Pill x={300} y={980} t={t - WARN} color={C.ink} bg="#3a0d1c">
-          <span style={{ width: 16, height: 16, borderRadius: 8, background: C.sos }} /> No street lights
+          <span style={{ width: 16, height: 16, borderRadius: 8, background: C.sos }} /> {tr("No street lights", "स्ट्रीट लाइट नहीं")}
         </Pill>
         <Pill x={780} y={1300} t={t - WARN - 8} color={C.ink} bg="#3a0d1c">
-          <span style={{ width: 16, height: 16, borderRadius: 8, background: C.sos }} /> Shops shut
+          <span style={{ width: 16, height: 16, borderRadius: 8, background: C.sos }} /> {tr("Shops shut", "दुकानें बंद")}
         </Pill>
         <Pill x={330} y={1250 - 10} t={t - WARN - 16} color={C.ink} bg="#3a0d1c">
-          <span style={{ width: 16, height: 16, borderRadius: 8, background: C.sos }} /> Nobody around
+          <span style={{ width: 16, height: 16, borderRadius: 8, background: C.sos }} /> {tr("Nobody around", "आसपास कोई नहीं")}
         </Pill>
       </AbsoluteFill>
       <AbsoluteFill style={{ background: "radial-gradient(ellipse 85% 70% at 50% 58%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.7) 100%)" }} />

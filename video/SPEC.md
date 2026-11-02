@@ -72,3 +72,7 @@ The routine scene (old 6.6–12.7 s) is gone, since the hook covers it. Everythi
 - Captions are hidden on lines 7, 8, 16 and 17: those words are already on screen as large type.
 - Each scene draws over its own span and the next one fades in on top (`components/Scene.tsx`); every animation cue comes from the caption timing in `timeline.ts`, so a re-recorded line moves its visuals with it.
 - Render: `REMOTION_BROWSER=<chrome-headless-shell> npx remotion render src/index.ts SafeNavIntro out/safenav-intro.mp4`; without music: add `--props='{"bgm":false}'`.
+
+## Hindi cut
+
+Same reel, Hindi narration (Kokoro `hf_alpha`) and Hindi on-screen text (Mukta for Devanagari, Plus Jakarta Sans for Latin). The script is natural spoken Hindi with the English words people actually use (SOS, live location, maps, footpath). Each line keeps the English line's caption beats, so every visual cue still lands on its word. Hindi runs longer than English, so each scene stretches by what its own lines need (`SHIFT`/`storyF` in `timeline.ts`); the English cut is untouched. App screenshots and the "reached safely" text stay in English, as the app shows them. Render with `--props='{"lang":"hi"}'`.
