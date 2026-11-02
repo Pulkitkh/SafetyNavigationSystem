@@ -31,7 +31,7 @@ export const SCENES = {
   checkin: { from: 66.6 + D, to: 71.0 + D },
   sos: { from: 71.0 + D, to: 80.4 + D },
   home: { from: 80.4 + D, to: 86.2 + D },
-  outro: { from: 86.2 + D, to: 95.0 + D },
+  outro: { from: 86.2 + D, to: 96.0 + D },
 } as const;
 export type SceneKey = keyof typeof SCENES;
 export const TOTAL_FRAMES = f(SCENES.outro.to);
@@ -66,8 +66,8 @@ export const LINES: Line[] = [
   { id: "l13", at: 66.8 + D, chunks: ["If she stops, or strays from the route,", "SafeNav *checks in.*"] },
   { id: "l14", at: 71.2 + D, chunks: ["And if something ever feels wrong,", "one long press on *SOS*", "alerts her trusted contacts *instantly,*", "with her *live location.*"] },
   { id: "l15", at: 80.6 + D, chunks: ["Tonight,", "Priya gets *home safe.*", "And her mother sees the moment she arrives."] },
-  { id: "l16", at: 86.6 + D, chunks: ["SafeNav is *free,*", "in your browser and on Android."] },
-  { id: "l17", at: 90.7 + D, chunks: ["*Get home safe.*", "*Every night.*"] },
+  { id: "l16", at: 86.6 + D, chunks: ["SafeNav is *coming soon.*", "Follow us, and be the first to try it."] },
+  { id: "l17", at: 91.5 + D, chunks: ["*Get home safe.*", "*Every night.*"] },
 ];
 
 export interface CaptionChunk {

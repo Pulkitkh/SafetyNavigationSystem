@@ -17,6 +17,7 @@ The first video in SafeNav's social series: what the problem is, what SafeNav do
 | A female character | Priya as an illustrated silhouette in the night and home scenes, plus a female narrator | A silhouette reads clearly at phone size and avoids an uncanny hand-drawn face |
 | Narration | Kokoro TTS, voice `af_heart` (Apache-2.0 model, generated offline), one file per line | No cloud TTS reachable; line files give exact durations for timing captions and scenes |
 | Facts | NCRB *Crime in India 2023*: 4,48,211 crimes against women (≈1,228 a day). She Shakti Suraksha Survey 2025 (CNN-News18): 82% of women feel safe by day, 48% at night. Sources shown on screen | Verified before writing; nothing is invented |
+| Prototype status | The app is in testing, so the video announces it as coming soon: no web address, no "free in your browser and on Android". The outro asks viewers to follow for early access | The prototype address stays private until launch |
 | Claims about the app | Only what it does today: street-by-street checks, safety search, live following, check-ins, SOS with live location, "reached safely" text, free in the browser and on Android | The video must not promise features that aren't live (no "rings on silent": Firebase isn't configured) |
 | App footage | Real screens: production planner for the routes (Indore, Rajwada → Palasia Square, at 10 pm), local server for the signed-in flows with fictional people (Priya Sharma, Sunita "Maa" Sharma) | Q1: real pages, no personal data |
 | Captions | Burned in, phrase by phrase, top third, ≥ 60 px | Most social video is watched muted; the bottom of the frame is covered by platform UI |
@@ -38,14 +39,14 @@ Reels viewers decide in the first 1–3 s, so the video now opens on text and vo
 
 | Time | Line | Picture |
 | --- | --- | --- |
-| 0.0 | Keys between your fingers. | Keys swing in close-up, bass hit on frame 0 |
+| 0.0 | Keys between your fingers. | A fist with key blades between the knuckles lands big on frame 0, a glint runs up a key, bass hit. A "10:02 PM · walking home" chip with four progress dots stays up through the four habits |
 | 1.5 | A fake phone call. | Phone ringing ("Papa") |
 | 2.7 | Walking a little faster. | Priya walks at nearly double pace |
 | 4.05 | "Text me when you reach." | Maa's message lands |
 | 5.3 | If you're a woman, you know this routine. | The four habits as tiles, each ticked |
 | 7.7 | You shouldn't have to. | Black, big type; then the story begins |
 
-The routine scene (old 6.6–12.7 s) is gone, since the hook covers it. Everything after the night street keeps its timing, shifted by 3.3 s (`HOOK`, `SHIFT_F` in `timeline.ts`). The outro closes with a share prompt that echoes the hook ("Send this to someone who always texts 'reached'") and "Follow for part 2".
+The routine scene (old 6.6–12.7 s) is gone, since the hook covers it. Everything after the night street keeps its timing, shifted by 3.3 s (`HOOK`, `SHIFT_F` in `timeline.ts`). The outro says "Coming soon" and "Follow for early access" (no address), then closes with a share prompt that echoes the hook ("Send this to someone who always texts 'reached'") and "Follow for part 2: how SafeNav scores a street".
 
 ## Storyboard (seconds, before the hook shift)
 

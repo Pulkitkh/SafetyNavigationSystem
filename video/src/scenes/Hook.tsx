@@ -1,7 +1,7 @@
 import { AbsoluteFill, interpolate } from "remotion";
 import { Bokeh } from "../components/Bokeh";
 import { Icon } from "../components/Icons";
-import { Keys } from "../components/Keys";
+import { Fist } from "../components/Fist";
 import { Phone } from "../components/Phone";
 import { At, useT } from "../components/Scene";
 import { C, EASE_OUT, FONT, POP } from "../theme";
@@ -35,13 +35,17 @@ function Punch({ text, top = 300, size = 96 }: { text: string; top?: number; siz
 
 function KeysCut() {
   const t = useT();
-  const push = interpolate(t, [0, 45], [1.0, 1.1]);
-  const swing = Math.sin(t / 4) * 7 * Math.exp(-t / 30);
+  // Lands big and fast on frame 0, then a slow push: movement in the very first second.
+  const land = interpolate(t, [0, 8], [1.35, 1], { ...clamp, easing: EASE_OUT });
+  const push = interpolate(t, [8, 45], [1, 1.08], clamp);
+  const glint = interpolate(t, [10, 26], [-0.3, 1.3], clamp);
   return (
-    <AbsoluteFill style={{ background: `radial-gradient(ellipse 70% 50% at 50% 62%, #2a1c4a 0%, ${C.canvas} 75%)` }}>
+    <AbsoluteFill style={{ background: `radial-gradient(ellipse 70% 50% at 50% 62%, #2a1c4a 0%, ${C.canvas} 75%)`, overflow: "hidden" }}>
       <Bokeh seed={31} count={14} />
-      <div style={{ position: "absolute", left: 540 - 270, top: 760, transform: `scale(${push}) rotate(${-16 + swing}deg)`, transformOrigin: "270px 80px", filter: "drop-shadow(0 30px 50px rgba(0,0,0,0.6))" }}>
-        <Keys width={540} />
+      <div style={{ position: "absolute", left: 540 - 320, top: 700, width: 640, transform: `scale(${land * push})`, transformOrigin: "320px 420px" }}>
+        <Fist width={640} />
+        {/* One glint travelling up the middle key */}
+        <div style={{ position: "absolute", left: 300, top: 60 + (1 - glint) * 180, width: 40, height: 40, borderRadius: 20, background: "radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0) 70%)", opacity: glint > 0 && glint < 1 ? 1 : 0 }} />
       </div>
       <Punch text="Keys between your *fingers.*" />
     </AbsoluteFill>
@@ -163,16 +167,39 @@ function TurnCut() {
 
 const PARTS = [KeysCut, CallCut, WalkCut, TextCut, RoutineCut, TurnCut];
 
+/** "10:02 PM · walking home" with four dots that fill one per habit: context plus a reason to keep watching. */
+function Context({ i }: { i: number }) {
+  return (
+    <div style={{ position: "absolute", left: 0, right: 0, top: 196, display: "flex", justifyContent: "center" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 18, padding: "12px 26px", borderRadius: 999, background: "rgba(22,21,31,0.85)", boxShadow: `0 0 0 2px ${C.line}`, fontFamily: FONT, fontWeight: 700, fontSize: 34, color: C.ink2 }}>
+        <span style={{ width: 12, height: 12, borderRadius: 6, background: C.sos, boxShadow: `0 0 10px ${C.sos}` }} />
+        10:02 PM · walking home
+        <span style={{ display: "flex", gap: 8, marginLeft: 6 }}>
+          {[0, 1, 2, 3].map((k) => (
+            <span key={k} style={{ width: 14, height: 14, borderRadius: 7, background: k <= i ? C.brandInk : "#3a3850" }} />
+          ))}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 /** The hook: the routine every woman knows, in six fast beats, from the very first frame. */
 export function Hook() {
   const t = useT();
   const i = CUTS.reduce((last, c, k) => (t >= c ? k : last), 0);
   const Part = PARTS[i];
+  const local = t - CUTS[i];
+  // A short zoom punch on every hard cut after the first.
+  const punch = i > 0 ? interpolate(local, [0, 6], [1.08, 1], { ...clamp, easing: EASE_OUT }) : 1;
   return (
     <AbsoluteFill style={{ overflow: "hidden" }}>
-      <At from={CUTS[i]}>
-        <Part />
-      </At>
+      <AbsoluteFill style={{ transform: `scale(${punch})` }}>
+        <At from={CUTS[i]}>
+          <Part />
+        </At>
+      </AbsoluteFill>
+      {i < 4 && <Context i={i} />}
     </AbsoluteFill>
   );
 }
