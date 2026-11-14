@@ -205,7 +205,7 @@ export function GuardianAsk({ here, stepFree, onPlanned }: { here: LngLat | null
 /** The planner's explanation, shown above the routes it compared. */
 export function GuardianPlanCard({ plan, onDismiss }: { plan: GuardianPlan; onDismiss: () => void }) {
   return (
-    <section className="rounded-3xl bg-brand-soft p-4 text-brand-soft-ink" aria-labelledby="guardian-plan-title">
+    <section id="guardian-plan" className="scroll-mt-3 rounded-3xl bg-brand-soft p-4 text-brand-soft-ink" aria-labelledby="guardian-plan-title">
       <div className="flex items-start gap-3">
         <ShieldCheck className="mt-0.5 h-6 w-6 shrink-0" aria-hidden />
         <div className="min-w-0 flex-1">

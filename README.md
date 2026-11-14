@@ -26,6 +26,27 @@ SafeNav is a mobile-first web app (installable PWA) for getting around Indian ci
 - **Shows nearby help and emergency numbers.** The nearest police stations, hospitals and 24-hour pharmacies, each with a one-tap safe route, plus India's emergency numbers (112, 1091, 181, 108, 1098, 1930).
 - **Web, PWA and native app.** One codebase runs in any browser, installs as a PWA, and ships as an Android app that keeps tracking with the screen locked, texts contacts automatically and offers "Send SOS" from the home-screen icon. Every push to `main` builds the APK: [download the latest](https://github.com/Pulkitkh/SafetyNavigationSystem/releases/latest/download/SafeNav.apk). See [docs/NATIVE_APP.md](docs/NATIVE_APP.md).
 
+## SafeNav Guardian: AI agents that look after the journey
+
+Four agents reason over SafeNav's own safety data and act on it, with every decision logged and shown on the **Guardian activity** page (`/guardian`), with its reasons and the steps taken.
+
+| Agent | Woken by | What it does |
+| --- | --- | --- |
+| **Route planner** | "Get me home to Vijay Nagar, I'm alone" (typed or spoken) | Finds the place, checks the area and the weather, plans and compares safety-scored routes (walk or ride), picks one and explains why. Its steps stream into the app as it works. |
+| **Journey watcher** | A monitoring rule firing: off route, stopped, running late | Looks at where you are now (lighting, places open, isolation, reports) and decides: check in now, check in **sooner** and give contacts a heads-up on a risky stretch, or briefly hold off when you've stopped somewhere lit and open. |
+| **Escalation** | Every SOS | After the SOS itself has gone out, sends contacts a situation update: where you were last seen, what the area is like right now, the nearest police station with directions, and whether to call 112. |
+| **Report triage** | New community reports (once a minute) | Verifies reports, merges duplicates into the original (which adds to its weight), and hides spam, abuse and personal details. |
+
+**How it works.** Each agent runs a bounded tool-calling loop (`src/lib/agent/loop.ts`): the model chooses among tools that wrap SafeNav's existing functions (place search, area check, weather, safety-scored route planning, nearby help), sees the results and repeats until it gives an answer, which is validated before use. Models are reached through their OpenAI-compatible endpoints on free tiers (Gemini, then Groq or OpenRouter); a retired, busy or slow model is skipped for the next (`src/lib/agent/llm.ts`).
+
+**Safety by design.**
+
+- SOS, check-ins and automatic SOS never depend on a model. If no model answers within a few seconds, the existing rule applies unchanged.
+- Guardrails are code, not prompts. The watcher may hold off a check-in only where the street data, not the model, shows a lit, mapped spot with somewhere open, never for leaving the route, and only once per kind per journey. An agent can always escalate, never stand an SOS down. A duplicate is accepted only for a report the server itself found nearby.
+- Models get only what a decision needs (an area summary, distances, the time), never names or phone numbers. Report text is passed as untrusted data.
+
+Configure with `GEMINI_API_KEY` and/or `GROQ_API_KEY` (see `.env.example`). Without a key the Guardian is simply off.
+
 ## Why a PWA
 
 | Need | How the PWA covers it |
@@ -156,11 +177,12 @@ In India, application-to-person SMS needs **DLT registration** (TRAI rules): reg
 
 ```
 src/
-  app/                 Pages (plan, journey, safety, area, timer, report, contacts, help, fake-call, about, account, live viewer /t/[token])
-    api/               Route handlers (auth, contacts, reports, routes/plan, trips + reroute, sos, share, places, geocode, safety/area, health)
+  app/                 Pages (plan, journey, safety, area, timer, report, contacts, help, fake-call, about, account, guardian, live viewer /t/[token])
+    api/               Route handlers (auth, contacts, reports, routes/plan, trips + reroute, sos, share, places, geocode, safety/area, agent/*, health)
   components/          Map, SOS system, route cards, search, navigation
   lib/
-    safety/            Scoring engine (score.ts), route planning (plan.ts), area check (area.ts)
+    agent/             Guardian agents: model client with failover (llm.ts), tool loop (loop.ts), tools, planner, watcher, escalation, triage, decision log
+    safety/            Scoring engine (score.ts), route planning (plan.ts), area check (area.ts, checks.ts)
     location-input.ts  Coordinates, map links and plus codes
     providers/         OSRM, Valhalla, Overpass, Photon/Nominatim, Open-Meteo clients with failover and a shared DB cache
     client/            Browser hooks: GPS (native background GPS in the app), voice guidance, shake detection

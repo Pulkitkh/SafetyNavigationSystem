@@ -37,6 +37,8 @@ export interface ChatRequest {
   /** Total time allowed for this call, across providers. */
   timeoutMs: number;
   temperature?: number;
+  /** How much the model thinks before answering. Every provider here accepts low, medium and high. */
+  reasoningEffort?: "low" | "medium" | "high";
 }
 
 export interface ChatResponse {
@@ -64,8 +66,9 @@ const PROVIDERS: Record<ProviderName, Provider> = {
     base: "https://generativelanguage.googleapis.com/v1beta/openai",
     keyEnv: "GEMINI_API_KEY",
     modelEnv: "GEMINI_MODEL",
-    // Aliases first: model names are retired often, the "latest" aliases are not.
-    models: ["gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest"],
+    // Fast, generally available models first; the "latest" aliases follow, then the lite models.
+    // Names that are retired are skipped automatically for the rest of the run.
+    models: ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-flash-latest", "gemini-flash-lite-latest"],
   },
   groq: {
     name: "groq",
@@ -158,6 +161,8 @@ async function callProvider(p: Provider, model: string, req: ChatRequest, timeou
     model,
     messages: req.messages,
     temperature: req.temperature ?? 0.2,
+    // Decisions here are well specified; low effort keeps them fast on free tiers.
+    reasoning_effort: req.reasoningEffort ?? "low",
   };
   if (req.tools?.length) {
     body.tools = req.tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } }));
@@ -207,9 +212,16 @@ async function callProvider(p: Provider, model: string, req: ChatRequest, timeou
   };
 }
 
+/** One attempt may use at most this long, and at most half the time left, so a slow model always leaves time for the next. */
+const ATTEMPT_MS = 25_000;
+const MIN_ATTEMPT_MS = 4_000;
+
 /**
- * One model turn. Tries each configured provider and model in order until one
- * answers within the time left, and throws LlmUnavailableError if none can.
+ * One model turn. Tries each configured provider, and each of its models, in
+ * order until one answers within the time left, and throws LlmUnavailableError
+ * if none can. A model that is overloaded or retired is passed over for the
+ * provider's next model; a provider whose key is rejected, or whose every model
+ * is busy, is skipped for a while.
  */
 export async function chat(req: ChatRequest): Promise<ChatResponse> {
   if (testImpl) return testImpl(req);
@@ -219,26 +231,36 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
   const problems: string[] = [];
   // Skip providers that are cooling down, unless every one is.
   const ready = providers.filter((p) => !coolingDown(p.name));
-  for (const p of ready.length ? ready : providers) {
-    for (const model of modelsFor(p)) {
+  const queue = ready.length ? ready : providers;
+  for (const [pi, p] of queue.entries()) {
+    const models = modelsFor(p);
+    let busy = false;
+    for (const [mi, model] of models.entries()) {
       const left = deadline - Date.now();
       if (left < 1500) throw new LlmUnavailableError(`Out of time (${problems.join("; ") || "no answer"})`);
+      const last = pi === queue.length - 1 && mi === models.length - 1;
       try {
-        const out = await callProvider(p, model, req, left);
+        // AbortSignal.timeout takes whole milliseconds.
+        const out = await callProvider(p, model, req, Math.floor(last ? left : Math.min(left, ATTEMPT_MS, Math.max(MIN_ATTEMPT_MS, left / 2))));
         cooldown.delete(p.name);
         return out;
       } catch (err) {
         if (!(err instanceof ProviderError)) throw err;
-        problems.push(err.message);
+        problems.push(`${err.message} [${model}]`);
         if (err.kind === "model_gone") {
           goneModels.add(`${p.name}:${model}`);
-          continue; // next model, same provider
+          continue;
         }
-        if (err.kind === "auth") coolDown(p.name, 10 * 60_000);
-        else if (err.kind === "busy") coolDown(p.name, 60_000);
-        break; // next provider
+        if (err.kind === "auth") {
+          coolDown(p.name, 10 * 60_000);
+          busy = false;
+          break;
+        }
+        if (err.kind === "busy") busy = true;
+        // busy or bad_request: this model only; try the provider's next one.
       }
     }
+    if (busy) coolDown(p.name, 60_000);
   }
   console.warn(`[agent] no model answered: ${problems.join("; ")}`);
   throw new LlmUnavailableError(problems.join("; ") || "No model answered");

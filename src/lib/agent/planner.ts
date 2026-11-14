@@ -48,7 +48,7 @@ Rules:
 - If a place name is ambiguous, prefer the match nearest the traveller and name it in the summary.
 - If the request is not about a journey, or the destination can't be found after two searches, finish with status "need_more_info" and one short question.
 - Reasons must be concrete and come from tool results (e.g. "avoids an unlit 400 m stretch by the rail yard", "3 shops open along the way at 11 pm").
-- Write for the traveller: plain, calm, short. No markdown.
+- Write for the traveller: plain, calm, short. Address them as "you"; never guess anyone's gender. No markdown.
 - shareWithContacts: true after dark, for rides, or when any stretch scores below "good".`;
 
 const finishParameters = S.obj(
@@ -58,7 +58,7 @@ const finishParameters = S.obj(
     routeId: S.str("routeId of the route you recommend (when planned)"),
     destinationLabel: S.str("Short destination name"),
     question: S.str("One short question, only when status is need_more_info"),
-    summary: S.str("One or two sentences to the traveller: what you chose and why"),
+    summary: S.str("ONE short sentence to the traveller (at most 20 words): what you chose and the main reason"),
     reasons: S.arr(S.str("A concrete reason"), "2 to 5 concrete reasons, from tool results"),
     tips: S.arr(S.str("A practical tip"), "0 to 3 practical tips for this journey"),
     shareWithContacts: S.bool("Share the journey live with trusted contacts"),
@@ -85,7 +85,7 @@ export async function runPlanner(input: PlannerInput, onStep?: (s: AgentStep) =>
       routeId: z.string().optional(),
       destinationLabel: z.string().max(120).optional(),
       question: z.string().max(300).optional(),
-      summary: z.string().min(1).max(500),
+      summary: z.string().min(1).max(300),
       reasons: z.array(z.string().max(300)).max(6).default([]),
       tips: z.array(z.string().max(200)).max(4).default([]),
       shareWithContacts: z.boolean().default(true),

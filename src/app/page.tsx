@@ -190,6 +190,11 @@ export default function PlanPage() {
     resetPlan();
   };
 
+  // Bring the Guardian's explanation into view once it has planned.
+  useEffect(() => {
+    if (guardianPlan) document.getElementById("guardian-plan")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [guardianPlan]);
+
   const selected = plan?.routes.find((r) => r.id === selectedId) ?? plan?.routes[0] ?? null;
 
   const mapRoutes: MapRoute[] = useMemo(

@@ -3,7 +3,6 @@ import type { LngLat } from "@/lib/geo";
 import type { Anomaly } from "@/lib/monitor";
 import type { AreaSafety } from "@/lib/safety/area";
 import { checkArea } from "@/lib/safety/checks";
-import { LlmUnavailableError } from "./llm";
 import { runAgent } from "./loop";
 import { timeContext } from "./planner";
 import { areaBrief, S } from "./tools";
@@ -103,7 +102,7 @@ Actions:
 
 Write "message" to the traveller: one short, specific, calm sentence that says what you noticed and where (e.g. "You've stopped on a dark stretch near the rail yard. Are you OK?"). For defer, say what you'll do ("You're by an open pharmacy on a lit street, so I'll check again in 4 minutes.").
 For escalate_early also write "contactNote": one factual sentence for their contacts, no alarmism.
-Give 2-4 short reasons, from the facts only. Never invent places or facts.`;
+Give 2-4 short reasons, from the facts only. Never invent places or facts. Address the traveller as "you"; never guess anyone's gender.`;
 
 const proposalSchema = z.object({
   action: z.enum(["defer", "check_in", "escalate_early"]),
@@ -190,7 +189,7 @@ export async function runWatcher(input: WatchInput, budgetMs = 9_000): Promise<W
       ms: Date.now() - t0,
     };
   } catch (err) {
-    if (!(err instanceof LlmUnavailableError)) console.error(`[agent] watcher: ${(err as Error).message}`);
+    console.warn(`[agent] watcher used the check-in rule: ${(err as Error).message}`);
     return fallback("The Guardian model didn't answer in time, so the standard check-in rule applied.");
   }
 }

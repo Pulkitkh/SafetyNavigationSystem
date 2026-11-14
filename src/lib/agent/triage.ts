@@ -2,7 +2,7 @@ import { and, between, eq, gte, inArray, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/lib/db";
 import { haversine } from "@/lib/geo";
-import { LlmUnavailableError, llmConfigured } from "./llm";
+import { llmConfigured } from "./llm";
 import { recordDecision } from "./log";
 import { runAgent } from "./loop";
 import { S } from "./tools";
@@ -186,7 +186,7 @@ export async function runTriage(now = new Date(), { force = false } = {}): Promi
         maxTurns: 2,
       });
     } catch (err) {
-      if (!(err instanceof LlmUnavailableError)) console.error(`[agent] triage: ${(err as Error).message}`);
+      console.warn(`[agent] triage postponed: ${(err as Error).message}`);
       return []; // try again on a later pass
     }
     const verdicts = guardVerdicts(items, run.output.verdicts);

@@ -97,25 +97,45 @@ describe("agent loop", () => {
 describe("model providers", () => {
   const ok = (content: string) => new Response(JSON.stringify({ choices: [{ message: { role: "assistant", content } }] }), { status: 200 });
 
-  it("falls back from a busy provider to the next, and from a retired model to the next model", async () => {
+  it("tries the provider's next model when one is retired or overloaded, before moving on", async () => {
     vi.stubEnv("GEMINI_API_KEY", "g-secret");
     vi.stubEnv("GROQ_API_KEY", "q-secret");
     const seen: string[] = [];
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init: RequestInit) => {
-        const model = JSON.parse(String(init.body)).model as string;
-        seen.push(`${new URL(url).host}:${model}`);
-        if (url.includes("googleapis") && model === "gemini-flash-latest") return new Response("model not found", { status: 404 });
-        if (url.includes("googleapis")) return new Response("quota", { status: 429 });
-        return ok("from groq");
+        const body = JSON.parse(String(init.body));
+        seen.push(`${body.model}:${body.reasoning_effort}`);
+        if (body.model === "gemini-3.5-flash") return new Response("no longer available", { status: 404 });
+        if (body.model === "gemini-3.5-flash-lite") return new Response("high demand", { status: 503 });
+        return ok(`from ${body.model}`);
       }),
     );
     const out = await chat({ messages: [{ role: "user", content: "hi" }], timeoutMs: 10_000 });
-    expect(out).toMatchObject({ provider: "groq", content: "from groq" });
-    expect(seen).toEqual(["generativelanguage.googleapis.com:gemini-flash-latest", "generativelanguage.googleapis.com:gemini-2.5-flash", "api.groq.com:openai/gpt-oss-120b"]);
+    expect(out).toMatchObject({ provider: "gemini", model: "gemini-3.8-flash", content: "from gemini-3.8-flash" });
+    expect(seen).toEqual(["gemini-3.5-flash:low", "gemini-3.5-flash-lite:low", "gemini-3.8-flash:low"]);
 
-    // Gemini is now cooling down, so the next call goes straight to Groq.
+    // The retired model isn't asked again.
+    seen.length = 0;
+    await chat({ messages: [{ role: "user", content: "hi" }], timeoutMs: 10_000 });
+    expect(seen[0]).toBe("gemini-3.5-flash-lite:low");
+  });
+
+  it("moves to the next provider when every model of one is busy, and skips it for a while", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "g-secret");
+    vi.stubEnv("GROQ_API_KEY", "q-secret");
+    const seen: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        seen.push(`${new URL(url).host}:${JSON.parse(String(init.body)).model}`);
+        return url.includes("googleapis") ? new Response("quota", { status: 429 }) : ok("from groq");
+      }),
+    );
+    const out = await chat({ messages: [{ role: "user", content: "hi" }], timeoutMs: 10_000 });
+    expect(out).toMatchObject({ provider: "groq", model: "openai/gpt-oss-120b" });
+    expect(seen.filter((s) => s.startsWith("generativelanguage"))).toHaveLength(5);
+
     seen.length = 0;
     await chat({ messages: [{ role: "user", content: "hi" }], timeoutMs: 10_000 });
     expect(seen).toEqual(["api.groq.com:openai/gpt-oss-120b"]);

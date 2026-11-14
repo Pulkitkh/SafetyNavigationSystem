@@ -5,7 +5,7 @@ import { haversine, distanceToPolyline, type LngLat } from "@/lib/geo";
 import type { AreaSafety } from "@/lib/safety/area";
 import { checkArea, helpNear, type HelpNearby, type HelpPlace } from "@/lib/safety/checks";
 import { alertContacts, baseUrl } from "@/lib/server/alerts";
-import { LlmUnavailableError, llmConfigured } from "./llm";
+import { llmConfigured } from "./llm";
 import { recordDecision } from "./log";
 import { runAgent } from "./loop";
 import { timeContext } from "./planner";
@@ -38,6 +38,7 @@ export const ESCALATION_SYSTEM = `You are SafeNav Guardian's escalation agent. A
 
 Use only the facts given. Say, in 2-3 short sentences: where the person was last seen and how long ago (street or neighbourhood, not coordinates), what the area is like right now (lit or dark, open places, isolated or busy), and the single most useful next step. Name the nearest police station and its distance when known.
 Set call112 true when the person can't be reached quickly would be dangerous: it is dark, the area scores low, they left their route, the SOS was automatic (they didn't answer), or a ride went off route.
+Refer to the person by name, or as "they": never guess their gender from the name.
 Calm and factual. No markdown, no emojis, no speculation about what happened.`;
 
 const finishSchema = z.object({
@@ -115,7 +116,7 @@ export async function runEscalation(input: EscalationInput): Promise<Brief | nul
       `Person: ${user.name}. SOS reason: ${input.reason}.`,
       timeContext(now, point),
       journey ? `They were on a ${trip.mode === "ride" ? `cab/auto ride${trip.vehiclePlate ? ` (${trip.vehiclePlate})` : ""}` : "walk"} to ${trip.destLabel}.` : "They were not on a planned journey.",
-      minutesAgo != null ? `Last location received ${minutesAgo} min ago.` : "No location received.",
+      minutesAgo == null ? "No location received." : minutesAgo < 1 ? "Last location received just now." : `Last location received ${minutesAgo} min ago.`,
       offRouteM != null ? `${offRouteM} m from their planned route; ${toDestM} m from the destination.` : "",
       `Area at last location: ${area ? JSON.stringify(areaBrief(area)) : "unknown"}.`,
       help ? `Help nearby: ${JSON.stringify({ police: help.police.slice(0, 2).map((p) => ({ name: p.name, metres: p.distance })), hospitals: help.hospitals.slice(0, 1).map((p) => ({ name: p.name, metres: p.distance, openNow: p.openNow })) })}` : "",
@@ -128,7 +129,7 @@ export async function runEscalation(input: EscalationInput): Promise<Brief | nul
         input: factText,
         tools: [],
         finish: { description: "Give the update for the contacts.", parameters: finishParameters, schema: finishSchema },
-        budgetMs: 15_000,
+        budgetMs: 30_000,
         maxTurns: 2,
       });
       // Never soften the rules: if they say call 112, so does the update.
@@ -137,7 +138,8 @@ export async function runEscalation(input: EscalationInput): Promise<Brief | nul
       provider = run.provider;
       model = run.model;
     } catch (err) {
-      if (!(err instanceof LlmUnavailableError)) console.error(`[agent] escalation: ${(err as Error).message}`);
+      // The rules' brief goes out instead; say why.
+      console.warn(`[agent] escalation used the rules' brief: ${(err as Error).message}`);
     }
   }
 
