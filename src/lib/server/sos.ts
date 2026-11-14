@@ -1,6 +1,7 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
+import { queueEscalation } from "@/lib/agent/escalation";
 import { mapsLink, sosMessage } from "@/lib/sos";
 import { VEHICLE_LABELS, type VehicleType } from "@/lib/phone";
 import { newId, sha256, type User } from "./auth";
@@ -209,6 +210,9 @@ export async function raiseSos(input: RaiseSosInput) {
     delivered: reach.filter((r) => r.delivered.length).length,
     failed: reach.filter((r) => !r.delivered.length && r.failed.length).length,
   });
+
+  // The Guardian escalation agent follows up with a situation update for the contacts.
+  queueEscalation({ userId: user.id, tripId, reason: reason ? reason : "pressed SOS", liveUrl });
 
   return {
     tripId,

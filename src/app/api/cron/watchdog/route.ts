@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { ApiError, json, route } from "@/lib/server/http";
+import { runTriage } from "@/lib/agent/triage";
 import { runWatchdog } from "@/lib/server/watchdog";
 
 /**
@@ -13,5 +14,9 @@ export const POST = route(async (req: NextRequest) => {
   const given = req.headers.get("x-cron-secret") ?? "";
   if (!secret || given.length !== secret.length || !timingSafeEqual(Buffer.from(given), Buffer.from(secret))) throw new ApiError(401, "Not allowed");
   await runWatchdog();
-  return json({ ok: true });
+  const triaged = await runTriage().catch((err) => {
+    console.error(`[triage] ${(err as Error).message}`);
+    return [];
+  });
+  return json({ ok: true, triaged: triaged.length });
 });

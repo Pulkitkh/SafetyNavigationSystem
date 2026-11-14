@@ -1,6 +1,6 @@
 "use client";
 
-import { BellRing, Check, CircleAlert, Eye, MapPin, Navigation, PhoneCall, Radio, Route, Share2, Volume2, VolumeX, WifiOff } from "lucide-react";
+import { BellRing, Check, ChevronRight, CircleAlert, Eye, Loader2, MapPin, Navigation, PhoneCall, Radio, Route, Share2, Sparkles, Volume2, VolumeX, WifiOff } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -9,6 +9,7 @@ import Map, { type MapMarker } from "@/components/Map";
 import { useSos } from "@/components/Sos";
 import { Callout, EmptyState } from "@/components/ui";
 import { api, formatDistance } from "@/lib/client/api";
+import { askWatcher, useGuardianEnabled } from "@/lib/client/guardian";
 import { batteryLevel, useGeolocation, usePrefs, useSession, useWakeLock } from "@/lib/client/hooks";
 import { isNativeApp } from "@/lib/client/native";
 import { speak, useVoiceGuidance, voiceSupported } from "@/lib/client/voice";
@@ -136,7 +137,13 @@ function ActiveJourneyView({
 }) {
   const cfg = MONITOR_CONFIG[journey.mode];
   const monitorRef = useRef(initialMonitorState());
-  const [checkin, setCheckin] = useState<{ anomaly: Anomaly; deadline: number } | null>(null);
+  const [checkin, setCheckin] = useState<{ anomaly: Anomaly; deadline: number; message: string; total: number; early?: boolean } | null>(null);
+  const guardianEnabled = useGuardianEnabled();
+  /** The Guardian is deciding how to respond to an alert rule. */
+  const [consulting, setConsulting] = useState<Anomaly | null>(null);
+  const consultingRef = useRef(false);
+  /** The Guardian's latest word on this journey, shown on the sheet. */
+  const [guardianNote, setGuardianNote] = useState<{ text: string; tone: "good" | "caution" } | null>(null);
   const [now, setNow] = useState(Date.now());
   const [arrived, setArrived] = useState(false);
   const [remainingM, setRemainingM] = useState<number | null>(null);
@@ -209,13 +216,51 @@ function ActiveJourneyView({
       setCheckin(null);
       return;
     }
-    if (r.anomaly && !checkin) {
-      setCheckin({ anomaly: r.anomaly, deadline: Date.now() + CHECKIN_TIMEOUT_S * 1000 });
-      void setStatus("alert", ANOMALY_TEXT[r.anomaly]);
-      if (navigator.vibrate) navigator.vibrate([400, 200, 400]);
-      if (prefs.voice) speak(`Are you OK? ${ANOMALY_TEXT[r.anomaly]} Tap I'm OK, or SOS will be sent.`, true);
+    if (r.anomaly && !checkin && !consultingRef.current) {
+      const anomaly = r.anomaly;
+      const showCheckin = (message: string, seconds: number, early = false) => {
+        setCheckin({ anomaly, deadline: Date.now() + seconds * 1000, message, total: seconds, early });
+        void setStatus("alert", ANOMALY_TEXT[anomaly]);
+        if (navigator.vibrate) navigator.vibrate([400, 200, 400]);
+        if (prefs.voice) speak(`${message.includes("Are you OK") ? message : `Are you OK? ${message}`} Tap I'm OK, or SOS will be sent.`, true);
+      };
+      const f = geo.fix;
+      if (!guardianEnabled || !f) {
+        showCheckin(ANOMALY_TEXT[anomaly], CHECKIN_TIMEOUT_S);
+        return;
+      }
+      // Ask the Guardian how to respond, with the facts the rule saw. It answers within seconds or the rule applies as before.
+      consultingRef.current = true;
+      setConsulting(anomaly);
+      void askWatcher({
+        tripId: journey.tripId,
+        anomaly,
+        lat: f.lat,
+        lng: f.lng,
+        accuracy: Math.min(f.accuracy, 10_000),
+        offRouteM: Math.round(r.distanceToRouteM),
+        stoppedMin: Math.round(cfg.stoppedForMs / 60_000),
+        lateMin: Math.max(0, Math.round((Date.now() - journey.expectedArrival) / 60_000)),
+        remainingM: Math.round(r.remainingM),
+      }).then((d) => {
+        consultingRef.current = false;
+        setConsulting(null);
+        if (!d || d.action === "check_in") {
+          showCheckin(d?.message || ANOMALY_TEXT[anomaly], CHECKIN_TIMEOUT_S);
+          return;
+        }
+        if (d.action === "defer") {
+          const minutes = d.deferMinutes ?? 4;
+          monitorRef.current = { ...monitorRef.current, snoozed: { ...monitorRef.current.snoozed, [anomaly]: Date.now() + minutes * 60_000 } };
+          setGuardianNote({ text: d.message, tone: "good" });
+          if (prefs.voice) speak(d.message, true);
+          return;
+        }
+        setGuardianNote({ text: d.notified ? `${d.notified === 1 ? "1 contact has" : `${d.notified} contacts have`} been given a heads-up.` : "Your contacts already have a heads-up.", tone: "caution" });
+        showCheckin(d.message, Math.round(CHECKIN_TIMEOUT_S / 2), true);
+      });
     }
-  }, [geo.history, now, arrived, sosActive, checkin, journey, cfg, setStatus, prefs.voice]);
+  }, [geo.history, geo.fix, now, arrived, sosActive, checkin, journey, cfg, setStatus, prefs.voice, guardianEnabled]);
 
   // Escalate an unanswered check-in.
   useEffect(() => {
@@ -346,6 +391,17 @@ function ActiveJourneyView({
           </Callout>
         )}
         {geo.error && <Callout tone="caution" icon={CircleAlert}>{geo.error}</Callout>}
+        {consulting && (
+          <div className="flex items-center gap-2.5 rounded-2xl bg-brand-soft p-3.5 text-sm font-semibold text-brand-soft-ink" aria-live="polite">
+            <Loader2 className="h-5 w-5 shrink-0 animate-spin" aria-hidden />
+            Guardian is checking the streets around you…
+          </div>
+        )}
+        {guardianNote && !consulting && (
+          <Callout tone={guardianNote.tone} icon={Sparkles} title="Guardian">
+            <p>{guardianNote.text}</p>
+          </Callout>
+        )}
         {offRoute && (
           <div className="rounded-2xl bg-caution-soft p-3.5 text-sm text-ink">
             <p className="flex items-center gap-2 font-bold">
@@ -433,6 +489,12 @@ function ActiveJourneyView({
               Arriving more than {Math.round(cfg.overdueGraceMs / 60_000)} minutes late
             </li>
           </ul>
+          {guardianEnabled && (
+            <p className="mt-2.5 flex gap-2 text-[13px] text-ink">
+              <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-brand-ink" aria-hidden />
+              <span>The Guardian looks at each alert first: where you are, the lighting, what&apos;s open. It checks in sooner on dark or isolated stretches, and tells your contacts early when that&apos;s safer.</span>
+            </p>
+          )}
           <p className="mt-2.5 text-[13px]">
             {nativeApp
               ? "Tracking continues with the screen locked while the SafeNav notification is showing."
@@ -441,6 +503,17 @@ function ActiveJourneyView({
         </div>
 
         <AlertsCard compact />
+
+        {guardianEnabled && (
+          <Link href={`/guardian?trip=${journey.tripId}`} className="card tap flex items-center gap-3 p-4">
+            <Sparkles className="h-5 w-5 shrink-0 text-brand-ink" aria-hidden />
+            <span className="min-w-0 flex-1 text-sm">
+              <span className="block font-bold text-ink">Guardian activity for this journey</span>
+              <span className="block text-ink-2">Every decision, with its reasons</span>
+            </span>
+            <ChevronRight className="h-5 w-5 shrink-0 text-ink-3" aria-hidden />
+          </Link>
+        )}
 
         {confirmEnd ? (
           <div className="grid grid-cols-2 gap-2">
@@ -464,11 +537,12 @@ function ActiveJourneyView({
             <h2 id="checkin-title" className="text-2xl font-extrabold text-ink">
               Are you OK?
             </h2>
-            <p className="mt-1 text-ink-2">{ANOMALY_TEXT[checkin.anomaly]}</p>
+            <p className="mt-1 text-ink-2">{checkin.message}</p>
+            {checkin.early && <p className="mt-1.5 text-[13px] font-semibold text-caution">The Guardian shortened the countdown: this stretch looks risky.</p>}
             <div className="relative mx-auto my-4 h-28 w-28">
               <svg viewBox="0 0 100 100" className="-rotate-90" aria-hidden>
                 <circle cx="50" cy="50" r="44" fill="none" stroke="var(--surface-3)" strokeWidth="8" />
-                <circle cx="50" cy="50" r="44" fill="none" stroke="var(--sos)" strokeWidth="8" strokeLinecap="round" strokeDasharray={`${(secondsLeft / CHECKIN_TIMEOUT_S) * C} ${C}`} style={{ transition: "stroke-dasharray 1s linear" }} />
+                <circle cx="50" cy="50" r="44" fill="none" stroke="var(--sos)" strokeWidth="8" strokeLinecap="round" strokeDasharray={`${(secondsLeft / checkin.total) * C} ${C}`} style={{ transition: "stroke-dasharray 1s linear" }} />
               </svg>
               <span className="absolute inset-0 flex items-center justify-center text-4xl font-extrabold tabular-nums text-ink" aria-live="polite">
                 {secondsLeft}

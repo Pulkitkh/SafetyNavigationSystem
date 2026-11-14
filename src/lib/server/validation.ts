@@ -172,3 +172,21 @@ export const safetyTimerInput = z.object({
   endsAt: z.number().int().positive(),
   note: z.string().trim().max(120).optional(),
 });
+
+export const agentPlanInput = z.object({
+  request: z.string().trim().min(3, "Tell the Guardian where you want to go").max(500),
+  here: point.optional().nullable(),
+  stepFree: z.boolean().optional().default(false),
+});
+
+export const agentWatchInput = z.object({
+  tripId: z.string().min(1).max(64),
+  anomaly: z.enum(["off_route", "stopped", "overdue"]),
+  lat,
+  lng,
+  accuracy: z.number().min(0).max(100_000),
+  offRouteM: z.number().min(0).max(1_000_000).optional(),
+  stoppedMin: z.number().min(0).max(24 * 60).optional(),
+  lateMin: z.number().min(0).max(24 * 60).optional(),
+  remainingM: z.number().min(0).max(10_000_000).optional(),
+});

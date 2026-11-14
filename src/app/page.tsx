@@ -1,18 +1,20 @@
 "use client";
 
-import { Accessibility, ArrowRight, ArrowUpDown, Car, ChevronRight, Clock, CloudRain, Download, Footprints, Info, LocateFixed, MapPin, MessageSquareWarning, Moon, PhoneCall, Radio, ScanSearch, ShieldCheck, Star, Sun, Sunset, Timer, TriangleAlert, X } from "lucide-react";
+import { Accessibility, ArrowRight, ArrowUpDown, Car, ChevronRight, Clock, CloudRain, Download, Footprints, Info, LocateFixed, MapPin, MessageSquareWarning, Moon, PhoneCall, Radio, ScanSearch, ShieldCheck, Sparkles, Star, Sun, Sunset, Timer, TriangleAlert, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import Map, { type MapMarker, type MapRoute } from "@/components/Map";
 import { PlaceSearch, type PlaceValue } from "@/components/PlaceSearch";
+import { GuardianAsk, GuardianPlanCard } from "@/components/GuardianAsk";
 import { RouteCard } from "@/components/RouteCard";
 import { initials } from "@/components/Sos";
 import { Callout, IconTile, ProgressRing, Segmented, type Tone } from "@/components/ui";
 import { api, newShareToken } from "@/lib/client/api";
+import { useGuardianEnabled, type GuardianPlan } from "@/lib/client/guardian";
 import { useGeolocation, usePrefs, useSession } from "@/lib/client/hooks";
 import { store, type SavedPlace } from "@/lib/client/store";
-import type { LngLat } from "@/lib/geo";
+import { haversine, type LngLat } from "@/lib/geo";
 import { VEHICLE_LABELS, VEHICLE_TYPES, type VehicleType } from "@/lib/phone";
 import type { PlanResult } from "@/lib/safety/plan";
 import { useInstall } from "@/lib/client/install";
@@ -78,6 +80,8 @@ export default function PlanPage() {
   const [pickFor, setPickFor] = useState<"from" | "to" | null>(null);
   const [favorites, setFavorites] = useState<SavedPlace[]>([]);
   const [period, setPeriod] = useState<LightPeriod | null>(null);
+  const guardianEnabled = useGuardianEnabled();
+  const [guardianPlan, setGuardianPlan] = useState<GuardianPlan | null>(null);
 
   useEffect(() => setActiveJourney(!!store.journey()), []);
   useEffect(() => {
@@ -117,7 +121,28 @@ export default function PlanPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [here?.[0], here?.[1]]);
 
-  const resetPlan = () => setPlan(null);
+  const resetPlan = () => {
+    setPlan(null);
+    setGuardianPlan(null);
+  };
+
+  /** The Guardian planned a journey: show its choice in the planner, ready to start. */
+  const applyGuardianPlan = (g: GuardianPlan) => {
+    if (!g.plan || !g.destination || !g.from) return;
+    const start = g.from;
+    const fromHere = here != null && haversine(here, start) < 50;
+    setFrom(fromHere ? { label: "Your current location", point: start, current: true } : { label: "Start", detail: `${start[1].toFixed(5)}, ${start[0].toFixed(5)}`, point: start });
+    setTo({ label: g.destination.label, point: g.destination.point });
+    setMode(g.plan.mode);
+    const depart = g.departAt ? new Date(g.departAt) : null;
+    const later = depart != null && depart.getTime() - Date.now() > 5 * 60_000;
+    setLeaveLater(later);
+    if (later) setDepartLocal(localDateTimeValue(depart));
+    setPlan(g.plan);
+    setSelectedId(g.routeId ?? g.plan.routes[0]?.id ?? null);
+    setGuardianPlan(g);
+    setError(null);
+  };
 
   const findRoutes = async () => {
     if (!from || !to) return;
@@ -291,6 +316,9 @@ export default function PlanPage() {
             </Link>
           )}
 
+          {guardianEnabled && !guardianPlan && <GuardianAsk here={here} stepFree={prefs.stepFree} onPlanned={applyGuardianPlan} />}
+          {guardianEnabled && !guardianPlan && <p className="eyebrow -mb-2 px-1">Or plan it yourself</p>}
+
           <div className="card space-y-3 p-3.5">
             <Segmented
               label="Travel mode"
@@ -423,6 +451,7 @@ export default function PlanPage() {
               {error}
             </Callout>
           )}
+          {guardianPlan && plan && <GuardianPlanCard plan={guardianPlan} onDismiss={() => setGuardianPlan(null)} />}
           {plan?.advice && (
             <Callout tone="danger" icon={TriangleAlert}>
               {plan.advice}
@@ -545,6 +574,17 @@ export default function PlanPage() {
                   </Link>
                 ))}
               </div>
+
+              {me && guardianEnabled && (
+                <Link href="/guardian" className="card tap flex items-center gap-3 p-4">
+                  <IconTile icon={Sparkles} tone="brand" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-bold text-ink">Guardian activity</span>
+                    <span className="block text-[13px] leading-snug text-ink-2">Every decision the Guardian agents made for you, and why.</span>
+                  </span>
+                  <ChevronRight className="h-5 w-5 shrink-0 text-ink-3" aria-hidden />
+                </Link>
+              )}
 
               <Link href="/about" className="card tap flex items-center gap-3 p-4">
                 <IconTile icon={Info} tone="neutral" />

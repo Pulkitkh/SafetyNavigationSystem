@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronRight, Download, Info, LifeBuoy, MessageSquareWarning, PhoneCall, PlayCircle, ScanSearch, ShieldCheck, Timer, UserRound, Users, type LucideIcon } from "lucide-react";
+import { Check, ChevronRight, Download, Info, LifeBuoy, MessageSquareWarning, PhoneCall, PlayCircle, ScanSearch, ShieldCheck, Sparkles, Timer, UserRound, Users, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { DeviceSettings } from "@/components/DeviceSettings";
 import { AlertsCard } from "@/components/AlertsCard";
@@ -14,6 +14,7 @@ import { isNativeApp } from "@/lib/client/native";
 import { useReadiness } from "@/lib/client/readiness";
 
 const TOOLS: { href: string; title: string; text: string; icon: LucideIcon; tone: Tone }[] = [
+  { href: "/guardian", title: "Guardian activity", text: "Every decision the Guardian agents made for you, and why", icon: Sparkles, tone: "brand" },
   { href: "/area", title: "Is it safe here?", text: "Live check of lights, open places, police and reports around you", icon: ScanSearch, tone: "good" },
   { href: "/timer", title: "Safety timer", text: "Check in by a set time, or SafeNav sends SOS for you", icon: Timer, tone: "info" },
   { href: "/fake-call", title: "Fake incoming call", text: "A realistic call with a voice, to leave an uncomfortable situation", icon: PhoneCall, tone: "brand" },

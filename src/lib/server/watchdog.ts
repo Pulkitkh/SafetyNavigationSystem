@@ -20,6 +20,7 @@
  *     past the app's check-in time plus SERVER_SLACK_MS, an SOS.
  */
 import { and, eq, gt, inArray, isNotNull, isNull, lt } from "drizzle-orm";
+import { runTriage } from "@/lib/agent/triage";
 import { getDb, schema } from "@/lib/db";
 import { CHECKIN_TIMEOUT_S, MONITOR_CONFIG } from "@/lib/monitor";
 import { alertContacts, alertSelf, baseUrl } from "./alerts";
@@ -226,6 +227,9 @@ export function startWatchdog(everyMs = 30_000) {
     running = true;
     runWatchdog()
       .catch((err) => console.error(`[watchdog] ${(err as Error).message}`))
+      // New community reports are triaged by the Guardian agent (at most once a minute, only with a model configured).
+      .then(() => runTriage())
+      .catch((err) => console.error(`[triage] ${(err as Error).message}`))
       .finally(() => {
         running = false;
       });

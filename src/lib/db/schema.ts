@@ -77,9 +77,17 @@ export const reports = safenav.table(
     upvotes: integer("upvotes").notNull().default(0),
     flags: integer("flags").notNull().default(0),
     hidden: boolean("hidden").notNull().default(false),
+    // Set by the report triage agent (see src/lib/agent/triage.ts).
+    triagedAt: ts("triaged_at"),
+    // credible | duplicate | unclear | abusive | personal_info
+    triage: text("triage"),
+    // 1 (minor) to 3 (serious), as judged by triage.
+    severity: integer("severity"),
+    triageNote: text("triage_note"),
+    duplicateOf: text("duplicate_of"),
     createdAt: createdAt(),
   },
-  (t) => [index("reports_geo_idx").on(t.lat, t.lng), index("reports_observed_idx").on(t.observedAt)],
+  (t) => [index("reports_geo_idx").on(t.lat, t.lng), index("reports_observed_idx").on(t.observedAt), index("reports_triage_idx").on(t.triagedAt)],
 );
 
 export const reportVotes = safenav.table(
@@ -302,3 +310,33 @@ export const apiCache = safenav.table("api_cache", {
   value: text("value").notNull(),
   expiresAt: ts("expires_at").notNull(),
 });
+
+/**
+ * Every decision a Guardian agent makes, with its reasons and the tools it
+ * used, so the traveller (and anyone reviewing an incident) can see why.
+ */
+export const agentDecisions = safenav.table(
+  "agent_decisions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+    tripId: text("trip_id").references(() => trips.id, { onDelete: "set null" }),
+    // planner | watcher | escalation | triage
+    agent: text("agent").notNull(),
+    // What woke the agent, e.g. "request", "stopped", "sos", "new_reports".
+    trigger: text("trigger").notNull(),
+    // The action taken, e.g. "plan", "defer", "check_in", "escalate_early", "brief_sent".
+    decision: text("decision").notNull(),
+    summary: text("summary").notNull(),
+    // JSON string[]: the reasons given for the decision.
+    reasons: text("reasons").notNull().default("[]"),
+    // JSON: the tools called, in order, with what they returned in brief.
+    steps: text("steps").notNull().default("[]"),
+    // "gemini", "groq", ... or "rules" when no model was used.
+    provider: text("provider").notNull(),
+    model: text("model"),
+    ms: integer("ms").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [index("agent_decisions_user_idx").on(t.userId, t.createdAt), index("agent_decisions_trip_idx").on(t.tripId)],
+);

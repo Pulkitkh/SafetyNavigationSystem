@@ -5,6 +5,21 @@ export const MIGRATION_SQL = `
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'safenav') THEN CREATE SCHEMA "safenav"; END IF;
 END $$;
+CREATE TABLE IF NOT EXISTS "safenav"."agent_decisions" (
+	"id" text PRIMARY KEY NOT NULL,
+	"user_id" text,
+	"trip_id" text,
+	"agent" text NOT NULL,
+	"trigger" text NOT NULL,
+	"decision" text NOT NULL,
+	"summary" text NOT NULL,
+	"reasons" text DEFAULT '[]' NOT NULL,
+	"steps" text DEFAULT '[]' NOT NULL,
+	"provider" text NOT NULL,
+	"model" text,
+	"ms" integer DEFAULT 0 NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
 CREATE TABLE IF NOT EXISTS "safenav"."alert_deliveries" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"trip_id" text NOT NULL,
@@ -78,6 +93,11 @@ CREATE TABLE IF NOT EXISTS "safenav"."reports" (
 	"upvotes" integer DEFAULT 0 NOT NULL,
 	"flags" integer DEFAULT 0 NOT NULL,
 	"hidden" boolean DEFAULT false NOT NULL,
+	"triaged_at" timestamp with time zone,
+	"triage" text,
+	"severity" integer,
+	"triage_note" text,
+	"duplicate_of" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 CREATE TABLE IF NOT EXISTS "safenav"."safety_timers" (
@@ -163,6 +183,19 @@ CREATE TABLE IF NOT EXISTS "safenav"."users" (
 	"live_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
+ALTER TABLE "safenav"."agent_decisions" ADD COLUMN IF NOT EXISTS "id" text;
+ALTER TABLE "safenav"."agent_decisions" ADD COLUMN IF NOT EXISTS "user_id" text;
+ALTER TABLE "safenav"."agent_decisions" ADD COLUMN IF NOT EXISTS "trip_id" text;
+ALTER TABLE "safenav"."agent_decisions" ADD COLUMN IF NOT EXISTS "agent" text;
+ALTER TABLE "safenav"."agent_decisions" ADD COLUMN IF NOT EXISTS "trigger" text;
+ALTER TABLE "safenav"."agent_decisions" ADD COLUMN IF NOT EXISTS "decision" text;
+ALTER TABLE "safenav"."agent_decisions" ADD COLUMN IF NOT EXISTS "summary" text;
+ALTER TABLE "safenav"."agent_decisions" ADD COLUMN IF NOT EXISTS "reasons" text DEFAULT '[]' NOT NULL;
+ALTER TABLE "safenav"."agent_decisions" ADD COLUMN IF NOT EXISTS "steps" text DEFAULT '[]' NOT NULL;
+ALTER TABLE "safenav"."agent_decisions" ADD COLUMN IF NOT EXISTS "provider" text;
+ALTER TABLE "safenav"."agent_decisions" ADD COLUMN IF NOT EXISTS "model" text;
+ALTER TABLE "safenav"."agent_decisions" ADD COLUMN IF NOT EXISTS "ms" integer DEFAULT 0 NOT NULL;
+ALTER TABLE "safenav"."agent_decisions" ADD COLUMN IF NOT EXISTS "created_at" timestamp with time zone DEFAULT now() NOT NULL;
 ALTER TABLE "safenav"."alert_deliveries" ADD COLUMN IF NOT EXISTS "id" serial;
 ALTER TABLE "safenav"."alert_deliveries" ADD COLUMN IF NOT EXISTS "trip_id" text;
 ALTER TABLE "safenav"."alert_deliveries" ADD COLUMN IF NOT EXISTS "contact_id" text;
@@ -218,6 +251,11 @@ ALTER TABLE "safenav"."reports" ADD COLUMN IF NOT EXISTS "observed_at" timestamp
 ALTER TABLE "safenav"."reports" ADD COLUMN IF NOT EXISTS "upvotes" integer DEFAULT 0 NOT NULL;
 ALTER TABLE "safenav"."reports" ADD COLUMN IF NOT EXISTS "flags" integer DEFAULT 0 NOT NULL;
 ALTER TABLE "safenav"."reports" ADD COLUMN IF NOT EXISTS "hidden" boolean DEFAULT false NOT NULL;
+ALTER TABLE "safenav"."reports" ADD COLUMN IF NOT EXISTS "triaged_at" timestamp with time zone;
+ALTER TABLE "safenav"."reports" ADD COLUMN IF NOT EXISTS "triage" text;
+ALTER TABLE "safenav"."reports" ADD COLUMN IF NOT EXISTS "severity" integer;
+ALTER TABLE "safenav"."reports" ADD COLUMN IF NOT EXISTS "triage_note" text;
+ALTER TABLE "safenav"."reports" ADD COLUMN IF NOT EXISTS "duplicate_of" text;
 ALTER TABLE "safenav"."reports" ADD COLUMN IF NOT EXISTS "created_at" timestamp with time zone DEFAULT now() NOT NULL;
 ALTER TABLE "safenav"."safety_timers" ADD COLUMN IF NOT EXISTS "user_id" text;
 ALTER TABLE "safenav"."safety_timers" ADD COLUMN IF NOT EXISTS "ends_at" timestamp with time zone;
@@ -287,6 +325,14 @@ ALTER TABLE "safenav"."users" ADD COLUMN IF NOT EXISTS "live_accuracy" double pr
 ALTER TABLE "safenav"."users" ADD COLUMN IF NOT EXISTS "live_battery" double precision;
 ALTER TABLE "safenav"."users" ADD COLUMN IF NOT EXISTS "live_at" timestamp with time zone;
 ALTER TABLE "safenav"."users" ADD COLUMN IF NOT EXISTS "created_at" timestamp with time zone DEFAULT now() NOT NULL;
+DO $$ BEGIN
+  ALTER TABLE "safenav"."agent_decisions" ADD CONSTRAINT "agent_decisions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "safenav"."users"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE "safenav"."agent_decisions" ADD CONSTRAINT "agent_decisions_trip_id_trips_id_fk" FOREIGN KEY ("trip_id") REFERENCES "safenav"."trips"("id") ON DELETE set null ON UPDATE no action;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
+END $$;
 DO $$ BEGIN
   ALTER TABLE "safenav"."alert_deliveries" ADD CONSTRAINT "alert_deliveries_trip_id_trips_id_fk" FOREIGN KEY ("trip_id") REFERENCES "safenav"."trips"("id") ON DELETE cascade ON UPDATE no action;
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
@@ -359,6 +405,8 @@ DO $$ BEGIN
   ALTER TABLE "safenav"."trips" ADD CONSTRAINT "trips_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "safenav"."users"("id") ON DELETE cascade ON UPDATE no action;
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
 END $$;
+CREATE INDEX IF NOT EXISTS "agent_decisions_user_idx" ON "safenav"."agent_decisions" USING btree ("user_id","created_at");
+CREATE INDEX IF NOT EXISTS "agent_decisions_trip_idx" ON "safenav"."agent_decisions" USING btree ("trip_id");
 CREATE INDEX IF NOT EXISTS "alert_deliveries_trip_idx" ON "safenav"."alert_deliveries" USING btree ("trip_id");
 CREATE INDEX IF NOT EXISTS "app_devices_user_idx" ON "safenav"."app_devices" USING btree ("user_id");
 CREATE INDEX IF NOT EXISTS "contacts_user_idx" ON "safenav"."contacts" USING btree ("user_id");
@@ -368,6 +416,7 @@ CREATE INDEX IF NOT EXISTS "guardian_devices_contact_idx" ON "safenav"."guardian
 CREATE INDEX IF NOT EXISTS "osm_cells_used_idx" ON "safenav"."osm_cells" USING btree ("used_at");
 CREATE INDEX IF NOT EXISTS "reports_geo_idx" ON "safenav"."reports" USING btree ("lat","lng");
 CREATE INDEX IF NOT EXISTS "reports_observed_idx" ON "safenav"."reports" USING btree ("observed_at");
+CREATE INDEX IF NOT EXISTS "reports_triage_idx" ON "safenav"."reports" USING btree ("triaged_at");
 CREATE INDEX IF NOT EXISTS "sessions_user_idx" ON "safenav"."sessions" USING btree ("user_id");
 CREATE INDEX IF NOT EXISTS "sos_user_idx" ON "safenav"."sos_events" USING btree ("user_id");
 CREATE INDEX IF NOT EXISTS "trip_points_trip_idx" ON "safenav"."trip_points" USING btree ("trip_id","recorded_at");
